@@ -1,9 +1,9 @@
 {
     "author" : ["DragoPrime"],
     "install_msg" : "Thank you for installing Image-Channel!",
-    "name" : "Image-Channel",
+    "name" : "image-channel",
     "short" : "Image Channel.",
     "description" : "Set channel as image only, deleting all messages that don't contain any attachments.",
-    "tags" : ["image"],
+    "tags" : ["image-channel"],
     "end_user_data_statement": "This cog does not store any user data."
 }
