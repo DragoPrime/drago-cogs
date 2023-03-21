@@ -1,4 +1,4 @@
-from .image-channel import ImagesOnly
+from .image-channel import image-channel
 
 
 def setup(bot):
