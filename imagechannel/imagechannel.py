@@ -1,7 +1,3 @@
-import asyncio
-import datetime
-import re
-import typing
 
 import discord
 from redbot.core import Config, checks, commands
