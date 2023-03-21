@@ -43,6 +43,3 @@ class ImagesOnly(commands.Cog):
         # Remove message filter and thread creation handlers
         self.bot.remove_message_filter(self.image_filter)
         self.bot.remove_thread_created_handler(self.thread_created)
-
-def setup(bot):
-    bot.add_cog(ImagesOnly(bot))
