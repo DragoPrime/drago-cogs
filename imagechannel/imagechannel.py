@@ -1,11 +1,9 @@
 
 import discord
 from redbot.core import Config, checks, commands
-from redbot.core.bot import Red
-from redbot.core.utils.chat_formatting import humanize_list
 
 class ImagesOnly(commands.Cog):
-    def __init__(self, bot: Red):
+    def __init__(self, bot):
         self.bot = bot
 
     @commands.command()
