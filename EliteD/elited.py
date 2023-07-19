@@ -2,7 +2,7 @@ import discord
 
 from redbot.core import commands, app_commands
 
-class MEliteD(commands.Cog):
+class EliteD(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
