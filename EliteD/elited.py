@@ -1,13 +1,11 @@
-from redbot.core import commands
+import discord
 
-class EliteD(commands.Cog):
-    """My custom cog"""
+from redbot.core import commands, app_commands
 
+class MEliteD(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command()
-    async def mycom(self, ctx):
-        """This does stuff!"""
-        # Your code will go here
-        await ctx.send("I can do stuff!")
+    @app_commands.command()
+    async def hello(self, interaction: discord.Interaction):
+        await interaction.response.send_message("Hello World!", ephemeral=True)
