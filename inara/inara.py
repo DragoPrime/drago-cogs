@@ -16,15 +16,17 @@ class inara(commands.Cog):
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
-                        # Get the image file name from the URL (you can adjust this based on your URL structure)
-                        file_name = url.split('/')[-1]
+                        # Check if the response content type is an image
+                        content_type = response.headers.get("Content-Type", "")
+                        if not content_type.startswith("image"):
+                            await ctx.send("The URL does not point to an image.")
+                            return
 
-                        # Create a discord.File object from the image data
-                        image_data = await response.read()
-                        file = discord.File(image_data, filename=file_name)
+                        # Get the image file name from the URL (you can adjust this based on your URL structure)
+                        file_name = url.split("/")[-1]
 
                         # Send the image as an attachment
-                        await ctx.send(file=file)
+                        await ctx.send(file=discord.File(await response.read(), filename=file_name))
                     else:
                         await ctx.send("Image not found.")
         except Exception as e:
