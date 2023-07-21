@@ -9,10 +9,11 @@ class inara(commands.Cog):
     @commands.command()
     async def inara(self, ctx, image_variable):
         try:
-            # Replace 'YOUR_URL' with the base URL containing the variable
-            url = f'https://inara.cz/data/sig/400/{image_variable}.jpg'
+            # Replace 'YOUR_BASE_URL' with the base URL containing the variable
+            base_url = 'https://inara.cz/data/sig/400/'
+            url = f'{base_url}{image_variable}.jpg'
 
-            # Fetch the image data using discord.http
+            # Fetch the image data using aiohttp
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
@@ -22,11 +23,10 @@ class inara(commands.Cog):
                             await ctx.send("The URL does not point to an image.")
                             return
 
-                        # Get the image file name from the URL (you can adjust this based on your URL structure)
-                        file_name = url.split("/")[-1]
-
                         # Send the image as an attachment
-                        await ctx.send(file=discord.File(await response.read(), filename=file_name))
+                        image_data = await response.read()
+                        filename = f"{image_variable}.jpg"
+                        await ctx.send(file=discord.File(image_data, filename=filename))
                     else:
                         await ctx.send("Image not found.")
         except Exception as e:
