@@ -1,4 +1,5 @@
 from redbot.core import commands
+import requests
 
 class inara(commands.Cog):
     def __init__(self, bot):
