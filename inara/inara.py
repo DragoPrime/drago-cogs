@@ -3,12 +3,12 @@ from redbot.core import commands
 import aiohttp
 from io import BytesIO
 
-class Inara(commands.Cog):
+class inara(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.Cog.cog_slash(name="inara", description="Afiseaza semnatura de pe Inara.")
-    async def _inara(self, ctx: commands.Context, image_variable: str):
+    @commands.command()
+    async def inara(self, ctx, image_variable: str):
         try:
             base_url = 'https://inara.cz/data/sig/400/'
             image_url = base_url + image_variable + '.jpg'
@@ -26,7 +26,7 @@ class Inara(commands.Cog):
                         # Pass image data to a BytesIO object
                         image_bytesio = BytesIO(image_data)
 
-                        # Send the image as attachments
+                        # Send the BytesIO object as an attachment
                         await ctx.send(file=discord.File(image_bytesio, filename=f"{image_variable}.jpg"))
                     else:
                         await ctx.send("Image not found.")
