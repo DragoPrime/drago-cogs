@@ -9,14 +9,12 @@ class inara(commands.Cog):
     @commands.command()
     async def inara(self, ctx, image_variable: str):
         try:
-            # Sanitize the input by removing null bytes
-            image_variable = image_variable.replace("\x00", "")
-
             base_url = 'https://inara.cz/data/sig/400/'
-            url = f'{base_url}{image_variable}.jpg'
+            image_url = base_url + image_variable + '.jpg'
+            filename = image_variable + '.jpg'
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
+                async with session.get(image_url) as response:
                     if response.status == 200:
                         content_type = response.headers.get("Content-Type", "")
                         if not content_type.startswith("image"):
@@ -24,7 +22,6 @@ class inara(commands.Cog):
                             return
 
                         image_data = await response.read()
-                        filename = f"{image_variable}.jpg"
                         await ctx.send(file=discord.File(image_data, filename=filename))
                     else:
                         await ctx.send("Image not found.")
