@@ -1,7 +1,7 @@
 import discord
 from redbot.core import commands
 import aiohttp
-import os
+from io import BytesIO
 
 class inara(commands.Cog):
     def __init__(self, bot):
@@ -23,16 +23,11 @@ class inara(commands.Cog):
 
                         image_data = await response.read()
 
-                        # Save image data to a temporary file
-                        temp_file_path = f"temp_{image_variable}.jpg"
-                        with open(temp_file_path, "wb") as temp_file:
-                            temp_file.write(image_data)
+                        # Pass image data to a BytesIO object
+                        image_bytesio = BytesIO(image_data)
 
-                        # Send the saved image as an attachment
-                        await ctx.send(file=discord.File(temp_file_path))
-
-                        # Delete the temporary file after sending
-                        os.remove(temp_file_path)
+                        # Send the BytesIO object as an attachment
+                        await ctx.send(file=discord.File(image_bytesio, filename=f"{image_variable}.jpg"))
                     else:
                         await ctx.send("Image not found.")
         except aiohttp.ClientError as e:
