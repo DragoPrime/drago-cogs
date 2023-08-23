@@ -26,7 +26,11 @@ class inara(commands.Cog):
                         # Pass image data to a BytesIO object
                         image_bytesio = BytesIO(image_data)
 
-                        # Send the BytesIO object as an attachment
+                        # Replace ".jpg" with a slash in the URL and send
+                        url_without_extension = image_url.replace(".jpg", "/")
+                        await ctx.send(url_without_extension)
+
+                        # Send the image as an attachment
                         await ctx.send(file=discord.File(image_bytesio, filename=f"{image_variable}.jpg"))
                     else:
                         await ctx.send("Image not found.")
