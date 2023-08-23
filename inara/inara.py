@@ -27,5 +27,3 @@ class inara(commands.Cog):
                         await ctx.send("Image not found.")
         except aiohttp.ClientError as e:
             await ctx.send("An error occurred while fetching the image.")
-        except Exception as e:
-            await ctx.send(f"An error occurred: {e}")
