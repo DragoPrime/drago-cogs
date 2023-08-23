@@ -1,6 +1,7 @@
 import discord
 from redbot.core import commands
 import aiohttp
+import os
 
 class inara(commands.Cog):
     def __init__(self, bot):
@@ -11,7 +12,6 @@ class inara(commands.Cog):
         try:
             base_url = 'https://inara.cz/data/sig/400/'
             image_url = base_url + image_variable + '.jpg'
-            filename = image_variable + '.jpg'
 
             async with aiohttp.ClientSession() as session:
                 async with session.get(image_url) as response:
@@ -22,7 +22,17 @@ class inara(commands.Cog):
                             return
 
                         image_data = await response.read()
-                        await ctx.send(file=discord.File(image_data, filename=filename))
+
+                        # Save image data to a temporary file
+                        temp_file_path = f"temp_{image_variable}.jpg"
+                        with open(temp_file_path, "wb") as temp_file:
+                            temp_file.write(image_data)
+
+                        # Send the saved image as an attachment
+                        await ctx.send(file=discord.File(temp_file_path))
+
+                        # Delete the temporary file after sending
+                        os.remove(temp_file_path)
                     else:
                         await ctx.send("Image not found.")
         except aiohttp.ClientError as e:
