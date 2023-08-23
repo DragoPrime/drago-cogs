@@ -7,15 +7,17 @@ class inara(commands.Cog):
         self.bot = bot
 
     @commands.command()
-    async def inara(self, ctx, image_variable: str):  # Make sure the parameter is properly annotated
+    async def inara(self, ctx, image_variable: str):
         try:
+            # Sanitize the input by removing null bytes
+            image_variable = image_variable.replace("\x00", "")
+
             base_url = 'https://inara.cz/data/sig/400/'
             url = f'{base_url}{image_variable}.jpg'
 
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
-                        # Check the actual content type
                         content_type = response.headers.get("Content-Type", "")
                         if not content_type.startswith("image"):
                             await ctx.send("The URL does not point to an image.")
