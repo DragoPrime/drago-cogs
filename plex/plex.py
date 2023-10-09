@@ -1,10 +1,10 @@
 import discord
-from discord.ext import commands
+from redbot.core import commands
 import requests
 
 # Define your Plex server API base URL and token here
-PLEX_BASE_URL = 'https://your-plex-server-url.com'
-PLEX_TOKEN = 'your-plex-api-token'
+PLEX_BASE_URL = 'https://plex.invictusmundus.com'
+PLEX_TOKEN = 'rys5jYGU2wjYXkZqMUyT'
 
 class PlexCog(commands.Cog):
     def __init__(self, bot):
