@@ -35,6 +35,3 @@ class Plex(commands.Cog):
         
         except Exception as e:
             await ctx.send(f'An error occurred: {str(e)}')
-
-def setup(bot):
-    bot.add_cog(PlexCog(bot))
