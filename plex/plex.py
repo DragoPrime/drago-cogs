@@ -6,12 +6,12 @@ import requests
 PLEX_BASE_URL = 'https://plex.invictusmundus.com'
 PLEX_TOKEN = 'rys5jYGU2wjYXkZqMUyT'
 
-class PlexCog(commands.Cog):
+class Plex(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @commands.command()
-    async def play(self, ctx, media_name):
+    async def plex(self, ctx, media_name):
         """Command to play media from Plex server."""
         try:
             # Build the Plex API URL to search for media by name
