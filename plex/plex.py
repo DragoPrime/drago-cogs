@@ -6,7 +6,7 @@ import requests
 PLEX_BASE_URL = 'https://plex.invictusmundus.com'
 PLEX_TOKEN = 'rys5jYGU2wjYXkZqMUyT'
 
-class Plex(commands.Cog):
+class plex(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 

@@ -1,4 +1,4 @@
-from .plex import Plex
+from .plex import plex
 
 
 async def setup(bot):
