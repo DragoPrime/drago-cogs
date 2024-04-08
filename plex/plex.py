@@ -5,8 +5,8 @@ from plexapi.server import PlexServer
 class PlexCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.plex_token = "YOUR_PLEX_TOKEN"  # Replace with your Plex token
-        self.plex_baseurl = "http://localhost:32400"  # Update if Plex server is running on a different port
+        self.plex_token = "aNqSN_FV6WF-G8_x8ze7"  # Replace with your Plex token
+        self.plex_baseurl = "http://192.168.1.12:32400"  # Update if Plex server is running on a different port
 
     @commands.command()
     async def plex_info(self, ctx):
