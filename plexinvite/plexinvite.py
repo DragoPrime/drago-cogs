@@ -4,7 +4,7 @@ from plexapi.myplex import MyPlexAccount
 import asyncio
 
 class PlexInvite(commands.Cog):
-    """A cog that invites users to a Plex server after they get a specific role in Discord."""
+    """Un cog care invită utilizatorii la un server Plex după ce obțin un anumit rol în Discord."""
 
     def __init__(self, bot):
         self.bot = bot
