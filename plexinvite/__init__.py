@@ -1,5 +1,4 @@
-from .plex import PlexInvite
+from .plexinvite import PlexInvite
 
-
-async def setup(bot):
-    await bot.add_cog(PlexInvite(bot))
+def setup(bot):
+    bot.add_cog(PlexInvite(bot))
