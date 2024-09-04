@@ -2,45 +2,15 @@ import discord
 from discord.ext import commands
 import aiohttp
 import json
-import os
 
 class JellyfinCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.config_file = "jellyfin_config.json"
         self.server_url = None
         self.username = None
         self.password = None
         self.access_token = None
         self.user_id = None
-
-        # Load the configuration from file if it exists
-        self.load_config()
-        if self.server_url and self.username and self.password:
-            bot.loop.create_task(self.authenticate())  # Authenticate if credentials are available
-
-    def load_config(self):
-        """Load the configuration from the JSON file."""
-        if os.path.exists(self.config_file):
-            with open(self.config_file, "r") as f:
-                config = json.load(f)
-                self.server_url = config.get("server_url")
-                self.username = config.get("username")
-                self.password = config.get("password")
-                self.access_token = config.get("access_token")
-                self.user_id = config.get("user_id")
-
-    def save_config(self):
-        """Save the current configuration to the JSON file."""
-        config = {
-            "server_url": self.server_url,
-            "username": self.username,
-            "password": self.password,
-            "access_token": self.access_token,
-            "user_id": self.user_id
-        }
-        with open(self.config_file, "w") as f:
-            json.dump(config, f)
 
     @commands.command(name='jellyfinsetup')
     @commands.is_owner()  # Restrict this command to the bot owner
@@ -50,8 +20,7 @@ class JellyfinCog(commands.Cog):
         self.username = username
         self.password = password
         await self.authenticate()
-        self.save_config()
-        await ctx.send("Jellyfin setup complete and configuration saved.")
+        await ctx.send("Jellyfin setup complete.")
 
     async def authenticate(self):
         """Authenticate with the Jellyfin server and retrieve an access token."""
@@ -66,7 +35,6 @@ class JellyfinCog(commands.Cog):
                     self.access_token = data['AccessToken']
                     self.user_id = data['User']['Id']
                     print("Successfully authenticated with Jellyfin.")
-                    self.save_config()  # Save the updated access token and user ID
                 else:
                     print(f"Failed to authenticate with Jellyfin: {response.status}")
 
