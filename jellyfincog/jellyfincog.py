@@ -52,7 +52,7 @@ class JellyfinCog(commands.Cog):
         self.save_config()
         await ctx.send("Jellyfin setup complete and configuration saved.")
 
-    async def authenticate(self):
+    async def authenticate(self, ctx):
         """Authenticate with the Jellyfin server and retrieve an access token."""
         auth_url = f"{self.server_url}/Users/AuthenticateByName"
         async with aiohttp.ClientSession() as session:
