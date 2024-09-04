@@ -41,7 +41,7 @@ class JellyfinCog(commands.Cog):
         with open(self.config_file, "w") as f:
             json.dump(config, f)
 
-    @commands.command(name='jellyfinsetup')
+    @commands.command()
     @commands.is_owner()  # Restrict this command to the bot owner
     async def jellyfinsetup(self, ctx, server_url: str, username: str, password: str):
         """Setup the Jellyfin server connection. (Owner only)"""
@@ -69,7 +69,7 @@ class JellyfinCog(commands.Cog):
                 else:
                     print(f"Failed to authenticate with Jellyfin: {response.status}")
 
-    @commands.command(name='search')
+    @commands.command()
     async def search(self, ctx, *, query):
         """Search for a title in the Jellyfin library."""
         if not self.access_token:
