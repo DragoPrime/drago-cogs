@@ -1,4 +1,4 @@
-from .jellysearch import JellyfinCog
+from .JellyfinCog import JellyfinCog
 
 def setup(bot):
     bot.add_cog(JellyfinCog(bot))
