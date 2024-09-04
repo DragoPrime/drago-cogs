@@ -72,8 +72,8 @@ class JellyfinCog(commands.Cog):
 
 def setup(bot):
     # Replace these values with your Jellyfin server details
-    server_url = 'http://your-jellyfin-server:8096'
-    username = 'your_username'
-    password = 'your_password'
+    server_url = 'http://192.168.1.12/:8096'
+    username = 'admin'
+    password = 'm36SH8kjs.'
 
     bot.add_cog(JellyfinCog(bot, server_url, username, password))
