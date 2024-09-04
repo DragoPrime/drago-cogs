@@ -1,26 +1,17 @@
 import discord
 from discord.ext import commands
 import aiohttp
-import json
 
 class JellyfinCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot, server_url, username, password):
         self.bot = bot
-        self.server_url = None
-        self.username = None
-        self.password = None
-        self.access_token = None
-        self.user_id = None
-
-    @commands.command(name='jellyfinsetup')
-    @commands.is_owner()  # Restrict this command to the bot owner
-    async def jellyfinsetup(self, ctx, server_url: str, username: str, password: str):
-        """Setup the Jellyfin server connection. (Owner only)"""
         self.server_url = server_url
         self.username = username
         self.password = password
-        await self.authenticate()
-        await ctx.send("Jellyfin setup complete.")
+        self.access_token = None
+        self.user_id = None
+        
+        bot.loop.create_task(self.authenticate())  # Authenticate when the bot starts
 
     async def authenticate(self):
         """Authenticate with the Jellyfin server and retrieve an access token."""
@@ -34,15 +25,14 @@ class JellyfinCog(commands.Cog):
                     data = await response.json()
                     self.access_token = data['AccessToken']
                     self.user_id = data['User']['Id']
-                    print("Successfully authenticated with Jellyfin.")
                 else:
                     print(f"Failed to authenticate with Jellyfin: {response.status}")
-
+    
     @commands.command(name='search')
     async def search(self, ctx, *, query):
         """Search for a title in the Jellyfin library."""
         if not self.access_token:
-            await ctx.send("Jellyfin is not set up yet. Please use the setup command.")
+            await ctx.send("I'm not authenticated with the Jellyfin server yet. Please wait a moment.")
             return
 
         search_url = f"{self.server_url}/Users/{self.user_id}/Items"
@@ -81,4 +71,9 @@ class JellyfinCog(commands.Cog):
                     print(f"Failed to search Jellyfin: {response.status}")
 
 def setup(bot):
-    bot.add_cog(JellyfinCog(bot))
+    # Replace these values with your Jellyfin server details
+    server_url = 'http://your-jellyfin-server:8096'
+    username = 'your_username'
+    password = 'your_password'
+
+    bot.add_cog(JellyfinCog(bot, server_url, username, password))
