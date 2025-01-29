@@ -128,6 +128,3 @@ class JellyfinSearch(commands.Cog):
                         await ctx.send(f"Error: Unable to search Jellyfin server (Status code: {response.status})")
             except Exception as e:
                 await ctx.send(f"Error connecting to Jellyfin server: {str(e)}")
-
-async def setup(bot):
-    await bot.add_cog(JellyfinSearch(bot))
