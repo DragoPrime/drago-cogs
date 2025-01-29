@@ -46,13 +46,19 @@ class JellyfinSearch(commands.Cog):
             return await ctx.send("Please set up the Jellyfin URL and API key first using `setjellyfinurl` and `setjellyfinapi`")
 
         encoded_query = urllib.parse.quote(query)
-        search_url = f"{self.base_url}/Items?searchTerm={encoded_query}&Limit=10&api_key={self.api_key}&Fields=Overview,Runtime,Genres,Studios,PremiereDate,CommunityRating,OfficialRating"
+        # Modified search parameters
+        search_url = f"{self.base_url}/Items?searchTerm={encoded_query}&IncludeItemTypes=Movie,Series,Episode&Recursive=true&SearchType=String&IncludeMedia=true&Limit=10&api_key={self.api_key}"
 
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(search_url) as response:
                     if response.status == 200:
                         data = await response.json()
+                        
+                        # Debug info
+                        print(f"Search URL: {search_url}")
+                        print(f"Total Items Found: {data.get('TotalRecordCount', 0)}")
+                        
                         items = data.get('Items', [])
 
                         if not items:
@@ -73,9 +79,14 @@ class JellyfinSearch(commands.Cog):
                             # Compile item details
                             details = []
                             
-                            # Type and Runtime
+                            # Add media type
+                            item_type = item.get('Type', 'Unknown Type')
+                            details.append(f"Type: {item_type}")
+                            
+                            # Runtime
                             runtime = self.format_runtime(item.get('RunTimeTicks'))
-                            details.append(f"Runtime: {runtime}")
+                            if runtime != "N/A":
+                                details.append(f"Runtime: {runtime}")
 
                             # Rating information
                             if community_rating := item.get('CommunityRating'):
@@ -99,8 +110,13 @@ class JellyfinSearch(commands.Cog):
                                 inline=False
                             )
 
+                        # Add total results count to footer
+                        total_results = data.get('TotalRecordCount', 0)
+                        embed.set_footer(text=f"Found {total_results} results in total")
+
                         await ctx.send(embed=embed)
                     else:
-                        await ctx.send(f"Error: Unable to search Jellyfin server (Status code: {response.status})")
+                        error_text = await response.text()
+                        await ctx.send(f"Error: Unable to search Jellyfin server (Status code: {response.status})\nError details: {error_text}")
             except Exception as e:
                 await ctx.send(f"Error connecting to Jellyfin server: {str(e)}")
