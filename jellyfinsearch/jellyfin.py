@@ -17,14 +17,14 @@ class JellyfinSearch(commands.Cog):
     async def setjellyfinurl(self, ctx, url: str):
         """Set the Jellyfin server URL"""
         self.base_url = url.rstrip('/')
-        await ctx.send(f"Jellyfin server URL set to: {self.base_url}")
+        await ctx.send(f"URL-ul serverului Jellyfin a fost setat la: {self.base_url}")
 
     @commands.command()
     @commands.is_owner()
     async def setjellyfinapi(self, ctx, api_key: str):
         """Set the Jellyfin API key"""
         self.api_key = api_key
-        await ctx.send("Jellyfin API key has been set.")
+        await ctx.send("Cheia API Jellyfin a fost setată.")
         # Delete the message containing the API key for security
         await ctx.message.delete()
 
@@ -43,36 +43,31 @@ class JellyfinSearch(commands.Cog):
     async def freia(self, ctx, *, query: str):
         """Search for content on your Jellyfin server"""
         if not self.base_url or not self.api_key:
-            return await ctx.send("Please set up the Jellyfin URL and API key first using `setjellyfinurl` and `setjellyfinapi`")
+            return await ctx.send("Te rog să setezi mai întâi URL-ul și cheia API folosind `setjellyfinurl` și `setjellyfinapi`")
 
         encoded_query = urllib.parse.quote(query)
-        # Modified search parameters
-        search_url = f"{self.base_url}/Items?searchTerm={encoded_query}&IncludeItemTypes=Movie,Series,Episode&Recursive=true&SearchType=String&IncludeMedia=true&Limit=10&api_key={self.api_key}"
+        # Modified search parameters - removed Episode from IncludeItemTypes
+        search_url = f"{self.base_url}/Items?searchTerm={encoded_query}&IncludeItemTypes=Movie,Series&Recursive=true&SearchType=String&IncludeMedia=true&Limit=10&api_key={self.api_key}"
 
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(search_url) as response:
                     if response.status == 200:
                         data = await response.json()
-                        
-                        # Debug info
-                        print(f"Search URL: {search_url}")
-                        print(f"Total Items Found: {data.get('TotalRecordCount', 0)}")
-                        
                         items = data.get('Items', [])
 
                         if not items:
-                            return await ctx.send("No results found.")
+                            return await ctx.send("Nu s-au găsit rezultate.")
 
                         # Create a single embed for all results
                         embed = discord.Embed(
-                            title=f"Search Results for '{query}'",
+                            title=f"Rezultate pentru '{query}'",
                             color=discord.Color.blue()
                         )
 
                         for item in items:
                             # Create title with year if available
-                            title = item.get('Name', 'Unknown Title')
+                            title = item.get('Name', 'Titlu necunoscut')
                             if year := item.get('ProductionYear'):
                                 title += f" ({year})"
 
@@ -80,13 +75,18 @@ class JellyfinSearch(commands.Cog):
                             details = []
                             
                             # Add media type
-                            item_type = item.get('Type', 'Unknown Type')
-                            details.append(f"Type: {item_type}")
+                            item_type = item.get('Type', 'Tip necunoscut')
+                            # Translate media type
+                            if item_type == "Movie":
+                                item_type = "Film"
+                            elif item_type == "Series":
+                                item_type = "Serial"
+                            details.append(f"Tip: {item_type}")
                             
                             # Runtime
                             runtime = self.format_runtime(item.get('RunTimeTicks'))
                             if runtime != "N/A":
-                                details.append(f"Runtime: {runtime}")
+                                details.append(f"Durată: {runtime}")
 
                             # Rating information
                             if community_rating := item.get('CommunityRating'):
@@ -94,14 +94,13 @@ class JellyfinSearch(commands.Cog):
 
                             # Genres (limited to 3)
                             if genres := item.get('Genres', [])[:3]:
-                                details.append(f"Genres: {', '.join(genres)}")
+                                details.append(f"Genuri: {', '.join(genres)}")
 
-                            # Create direct links
+                            # Create direct link
                             item_id = item.get('Id')
                             if item_id:
                                 web_url = f"{self.base_url}/web/index.html#!/details?id={item_id}"
-                                play_url = f"{self.base_url}/web/index.html#!/details?id={item_id}&serverId=1&autoplay=true"
-                                details.append(f"[View Details]({web_url}) | [Play Now]({play_url})")
+                                details.append(f"[Vezi Detalii]({web_url})")
 
                             # Add field for this item
                             embed.add_field(
@@ -112,11 +111,11 @@ class JellyfinSearch(commands.Cog):
 
                         # Add total results count to footer
                         total_results = data.get('TotalRecordCount', 0)
-                        embed.set_footer(text=f"Found {total_results} results in total")
+                        embed.set_footer(text=f"S-au găsit {total_results} rezultate în total")
 
                         await ctx.send(embed=embed)
                     else:
                         error_text = await response.text()
-                        await ctx.send(f"Error: Unable to search Jellyfin server (Status code: {response.status})\nError details: {error_text}")
+                        await ctx.send(f"Eroare: Nu s-a putut căuta pe serverul Jellyfin (Cod status: {response.status})\nDetalii eroare: {error_text}")
             except Exception as e:
-                await ctx.send(f"Error connecting to Jellyfin server: {str(e)}")
+                await ctx.send(f"Eroare la conectarea cu serverul Jellyfin: {str(e)}")
