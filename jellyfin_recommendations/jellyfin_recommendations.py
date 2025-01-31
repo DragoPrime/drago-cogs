@@ -1,5 +1,6 @@
 import discord
-from redbot.core import commands, Config, tasks
+from redbot.core import commands, Config
+from discord.ext import tasks
 from redbot.core.bot import Red
 import jellyfin_apiclient_python
 import random
