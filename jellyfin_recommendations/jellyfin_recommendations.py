@@ -1,5 +1,5 @@
 import discord
-from redbot.core import commands, Config
+from redbot.core import commands, Config, tasks
 from redbot.core.bot import Red
 import jellyfin_apiclient_python
 import random
@@ -16,7 +16,11 @@ class JellyfinRecommendations(commands.Cog):
             "recommendation_channel": None
         }
         self.config.register_guild(**default_guild)
-        
+        self.weekly_recommendation.start()
+    
+    def cog_unload(self):
+        self.weekly_recommendation.cancel()
+    
     @commands.group(invoke_without_command=True)
     @commands.admin()
     async def jellyfinrec(self, ctx):
