@@ -1,4 +1,4 @@
-from .jellyfin_recommendations import setup
+from .jellyfin_recommendation import JellyfinRecommendation
 
-def initialize(bot):
-    setup(bot)
+async def setup(bot):
+    await bot.add_cog(JellyfinRecommendation(bot))
