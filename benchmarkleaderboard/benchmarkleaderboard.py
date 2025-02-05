@@ -8,7 +8,13 @@ class BenchmarkLeaderboard(commands.Cog):
 
     def __init__(self, bot: Red):
         self.bot = bot
-        self.config = Config.specialconf(identifier="benchmark_leaderboard")
+        self.config = Config.get_conf(self, identifier=1234567890, force_registration=True)
+        
+        # Define the structure of the configuration
+        default_global = {}
+        self.config.register_global(**default_global)
+        
+        # Leaderboard will be stored in memory and periodically saved
         self.leaderboards: Dict[str, Dict[int, float]] = {}
 
     @commands.group(invoke_without_command=True)
@@ -128,7 +134,8 @@ class BenchmarkLeaderboard(commands.Cog):
 
     async def load_leaderboard(self):
         """Load the leaderboard from config"""
-        self.leaderboards = await self.config.get_raw() or {}
+        loaded_data = await self.config.get_raw()
+        self.leaderboards = loaded_data if loaded_data else {}
 
     def cog_load(self):
         """Called when the cog is loaded"""
