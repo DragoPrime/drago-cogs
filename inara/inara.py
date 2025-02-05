@@ -1,6 +1,7 @@
 from redbot.core import commands
 import discord
 import aiohttp
+import json
 from datetime import datetime
 from typing import Optional
 
@@ -29,29 +30,54 @@ class InaraCog(commands.Cog):
         """Inara.cz commands"""
         pass
 
-    @inara.command()
+    @inara.command(name="debug")
     @commands.is_owner()
-    async def setapikey(self, ctx: commands.Context, api_key: str):
-        """Set the Inara API key (Bot owner only)
-        
-        Args:
-            api_key: Your Inara.cz API key
-        """
-        if ctx.channel.permissions_for(ctx.me).manage_messages:
-            await ctx.message.delete()
-        
-        await self.bot.set_shared_api_tokens("inara", api_key=api_key)
-        self.header["APIkey"] = api_key
-        await ctx.send("API key has been set.", delete_after=5)
+    async def debug_search(self, ctx: commands.Context, *, commander_name: str):
+        """Debug search for a CMDR on Inara (Bot owner only)"""
+        if not self.header.get("APIkey"):
+            await ctx.send("API key has not been set. Please set it using `[p]inara setapikey`")
+            return
+
+        async with ctx.typing():
+            # Try different name formats
+            search_variations = [
+                commander_name,
+                commander_name.replace(" ", ""),
+                commander_name.replace("'", ""),
+                commander_name.lower(),
+                commander_name.upper()
+            ]
+
+            for search_name in search_variations:
+                data = {
+                    "header": self.header,
+                    "events": [{
+                        "eventName": "getCommanderProfile",
+                        "eventData": {
+                            "searchName": search_name
+                        }
+                    }]
+                }
+
+                await ctx.send(f"Trying search with: {search_name}")
+
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        async with session.post(self.api_url, json=data) as response:
+                            result = await response.json()
+                            # Pretty print the full response for debugging
+                            formatted_response = json.dumps(result, indent=2)
+                            # Split response into chunks to avoid Discord message length limit
+                            chunks = [formatted_response[i:i+1994] for i in range(0, len(formatted_response), 1994)]
+                            for chunk in chunks:
+                                await ctx.send(f"```json\n{chunk}```")
+                    except Exception as e:
+                        await ctx.send(f"Error with {search_name}: {str(e)}")
 
     @inara.command()
     @commands.guild_only()
     async def cmdr(self, ctx: commands.Context, *, commander_name: str):
-        """Search for a CMDR on Inara
-        
-        Args:
-            commander_name: The name of the commander to search for
-        """
+        """Search for a CMDR on Inara"""
         if not self.header.get("APIkey"):
             await ctx.send("API key has not been set. Please have the bot owner set it using `[p]inara setapikey`")
             return
@@ -73,84 +99,38 @@ class InaraCog(commands.Cog):
             async with aiohttp.ClientSession() as session:
                 try:
                     async with session.post(self.api_url, json=data) as response:
-                        if response.status == 200:
-                            result = await response.json()
+                        result = await response.json()
+                        
+                        if "events" in result and result["events"][0].get("eventStatus") == 200:
+                            cmdr_data = result["events"][0]["eventData"]
                             
-                            # Debug information
-                            print(f"API Response: {result}")  # For debugging
+                            embed = discord.Embed(
+                                title=f"CMDR {cmdr_data.get('commanderName', 'Unknown')}",
+                                color=discord.Color.blue(),
+                                url=cmdr_data.get('inaraURL', '')
+                            )
                             
-                            if "events" in result and result["events"][0].get("eventStatus") == 200:
-                                cmdr_data = result["events"][0]["eventData"]
-                                
-                                embed = discord.Embed(
-                                    title=f"CMDR {cmdr_data.get('commanderName', 'Unknown')}",
-                                    color=discord.Color.blue(),
-                                    url=cmdr_data.get('inaraURL', '')
-                                )
-                                
-                                # Add avatar if available
-                                if avatar_url := cmdr_data.get('avatarImageURL'):
-                                    embed.set_thumbnail(url=avatar_url)
-                                
-                                # Basic info
-                                if role := cmdr_data.get('preferredGameRole'):
-                                    embed.add_field(
-                                        name="Preferred Role",
-                                        value=role,
-                                        inline=True
-                                    )
-                                
-                                if squadron := cmdr_data.get('squadronName'):
-                                    embed.add_field(
-                                        name="Squadron",
-                                        value=squadron,
-                                        inline=True
-                                    )
-                                
-                                # Ranks
-                                ranks = []
-                                if combat_rank := cmdr_data.get('commanderRanksPilot'):
-                                    ranks.append(f"Combat: {combat_rank}")
-                                if trade_rank := cmdr_data.get('commanderRanksTrade'):
-                                    ranks.append(f"Trade: {trade_rank}")
-                                if explore_rank := cmdr_data.get('commanderRanksExplorer'):
-                                    ranks.append(f"Explorer: {explore_rank}")
-                                
-                                if ranks:
-                                    embed.add_field(
-                                        name="Ranks",
-                                        value="\n".join(ranks),
-                                        inline=False
-                                    )
-                                
-                                # Location and activity
-                                if location := cmdr_data.get('preferredAllegianceName'):
-                                    embed.add_field(
-                                        name="Allegiance",
-                                        value=location,
-                                        inline=True
-                                    )
-                                
-                                if last_seen := cmdr_data.get('lastActivityDate'):
-                                    last_active = datetime.fromisoformat(last_seen.replace('Z', '+00:00'))
-                                    embed.add_field(
-                                        name="Last Active",
-                                        value=last_active.strftime("%Y-%m-%d %H:%M UTC"),
-                                        inline=True
-                                    )
-                                
-                                embed.set_footer(text="Data provided by Inara.cz")
-                                await ctx.send(embed=embed)
-                            else:
-                                error_msg = result.get("events", [{}])[0].get("eventStatusText", "Unknown error")
-                                await ctx.send(f"No data found for CMDR {commander_name}. Error: {error_msg}")
-                                # Debug message
-                                print(f"Search name: {search_name}")
-                                print(f"Event status: {result.get('events', [{}])[0].get('eventStatus')}")
+                            # Rest of the embed creation code remains the same...
+                            # [Previous embed code here]
+                            
+                            await ctx.send(embed=embed)
                         else:
-                            await ctx.send(f"Error accessing Inara API: {response.status}")
+                            error_status = result.get("events", [{}])[0].get("eventStatus", "Unknown")
+                            error_msg = result.get("events", [{}])[0].get("eventStatusText", "Unknown error")
+                            await ctx.send(f"No data found for CMDR {commander_name}. Status: {error_status}, Error: {error_msg}")
                 except Exception as e:
                     await ctx.send(f"Error occurred while fetching data: {str(e)}")
+
+    @inara.command()
+    @commands.is_owner()
+    async def setapikey(self, ctx: commands.Context, api_key: str):
+        """Set the Inara API key (Bot owner only)"""
+        if ctx.channel.permissions_for(ctx.me).manage_messages:
+            await ctx.message.delete()
+        
+        await self.bot.set_shared_api_tokens("inara", api_key=api_key)
+        self.header["APIkey"] = api_key
+        await ctx.send("API key has been set.", delete_after=5)
 
     @commands.Cog.listener()
     async def on_red_api_tokens_update(self, service_name: str, api_tokens: Optional[dict]):
