@@ -9,4 +9,19 @@ Note: Some cogs will be in romanian language. If you want to use them, fork them
 # Cogs
 | Cog | Description |
 | --- | ----------- |
-| BenchmarkLeaderboard | <details><summary>Allows users to add, view, and manage benchmarking leaderboards</summary>[p]benchmark add <type> <score></details>
+| BenchmarkLeaderboard | <details><summary>Allows users to add, view, and manage benchmarking leaderboards</summary>Allows users to add, view, and manage benchmarking leaderboards</details>
+
+## BenchmarkLeaderboard
+
+**`[p]benchmark add [type] [score]`**
+Add a benchmark score
+
+**`[p]benchmark view [type]`**
+View the top 10 scores for a specific benchmark
+
+**`[p]benchmark types`**
+List all existing benchmark types
+
+**`[p]benchmark delete [type] [@Username]`** - Admin command
+Delete a specific user's score
+Delete an entire benchmark type
