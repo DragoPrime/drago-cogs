@@ -57,12 +57,15 @@ class InaraCog(commands.Cog):
             return
 
         async with ctx.typing():
+            # Remove 'CMDR' prefix if present and strip whitespace
+            search_name = commander_name.replace('CMDR', '').strip()
+            
             data = {
                 "header": self.header,
                 "events": [{
                     "eventName": "getCommanderProfile",
                     "eventData": {
-                        "searchName": commander_name
+                        "searchName": search_name
                     }
                 }]
             }
@@ -72,6 +75,9 @@ class InaraCog(commands.Cog):
                     async with session.post(self.api_url, json=data) as response:
                         if response.status == 200:
                             result = await response.json()
+                            
+                            # Debug information
+                            print(f"API Response: {result}")  # For debugging
                             
                             if "events" in result and result["events"][0].get("eventStatus") == 200:
                                 cmdr_data = result["events"][0]["eventData"]
@@ -136,7 +142,11 @@ class InaraCog(commands.Cog):
                                 embed.set_footer(text="Data provided by Inara.cz")
                                 await ctx.send(embed=embed)
                             else:
-                                await ctx.send(f"No data found for CMDR {commander_name}")
+                                error_msg = result.get("events", [{}])[0].get("eventStatusText", "Unknown error")
+                                await ctx.send(f"No data found for CMDR {commander_name}. Error: {error_msg}")
+                                # Debug message
+                                print(f"Search name: {search_name}")
+                                print(f"Event status: {result.get('events', [{}])[0].get('eventStatus')}")
                         else:
                             await ctx.send(f"Error accessing Inara API: {response.status}")
                 except Exception as e:
