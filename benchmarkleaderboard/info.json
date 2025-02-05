@@ -1,0 +1,15 @@
+{
+    "author": ["Drago Prime"],
+    "name": "BenchmarkLeaderboard",
+    "short": "Track benchmark scores across different categories",
+    "description": "A cog that allows users to add and track benchmark scores, creating leaderboards for different performance metrics.",
+    "requirements": [],
+    "tags": ["utility", "benchmark", "leaderboard"],
+    "min_bot_version": "3.5.0",
+    "max_bot_version": "4.0.0",
+    "permissions": [
+        "embed_links",
+        "manage_messages"
+    ],
+    "end_user_data_statement": "Stores user IDs and their benchmark scores. Users can delete their data via the delete command."
+}
