@@ -10,7 +10,7 @@ Note: Some cogs will be in romanian language. If you want to use them, fork them
 | Cog | Description |
 | --- | ----------- |
 | BenchmarkLeaderboard | <details><summary>Allows users to add, view, and manage benchmarking leaderboards</summary>Allows users to add, view, and manage benchmarking leaderboards</details>
-| JellyfinSearch | <details><summary>Lets you search your Jellyfin server</summary>Lets you search your Jellyfin server</details>
+| JellyfinSearch | <details><summary>Lets you search your Jellyfin server</summary>This cog is in romanian language and a custom command to search</details>
 
 
 ## BenchmarkLeaderboard
@@ -22,3 +22,11 @@ Note: Some cogs will be in romanian language. If you want to use them, fork them
 **`[p]benchmark types`** - List all existing benchmark types
 
 **`[p]benchmark delete [type] [@Username]`** - Admin command, delete a specific user's score, delete an entire benchmark type
+
+## JellyfinSearch
+
+**`[p]setjellyfinurl https://your.jellyfin.server`** - Set Jellyfin server URL
+
+**`[p]setjellyfinapi your_api_key`** - Set API key
+
+**`[p]freia [movie or series title]`** - Search the libraries
