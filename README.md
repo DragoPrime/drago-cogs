@@ -9,4 +9,4 @@ Note: Some cogs will be in romanian language. If you want to use them, fork them
 # Cogs
 | Cog | Description |
 | --- | ----------- |
-| BenchmarkLeaderboard | <details><summary>allows users to add, view, and manage benchmarking leaderboards</summary>Allows users to add, view, and manage benchmarking leaderboards</details>
+| BenchmarkLeaderboard | <details><summary>Allows users to add, view, and manage benchmarking leaderboards</summary>[p]benchmark add <type> <score></details>
