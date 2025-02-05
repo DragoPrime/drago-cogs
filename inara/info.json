@@ -1,13 +1,11 @@
 {
-    "author": ["DragoPrime"],
-    "description": "Inara profile signature image!",
-    "disabled": false,
-    "end_user_data_statement": "This cog does not store any end user data.",
-    "hidden": false,
-    "install_msg": "Thanks for installing `Inara`! Get started with `[p]help inara`.",
-    "min_bot_version": "3.5.0",
     "name": "Inara",
-    "short": "Inara profile signature image.",
-    "tags": ["inara", "elite", "dangerous", "signature", "image", "profile"],
+    "author": ["Drago Prime"],
+    "description": "A cog to fetch commander information from Inara.cz",
+    "short": "Inara.cz commander lookup",
+    "tags": ["elite dangerous", "inara", "gaming"],
+    "requirements": ["aiohttp"],
+    "min_bot_version": "3.5.0",
+    "end_user_data_statement": "This cog does not store end user data.",
     "type": "COG"
 }
