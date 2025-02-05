@@ -118,6 +118,3 @@ class BenchmarkLeaderboard(commands.Cog):
     async def cog_load(self):
         """Load leaderboard data when the cog is loaded"""
         self.leaderboards = await self.config.leaderboards() or {}
-
-def setup(bot):
-    return bot.add_cog(BenchmarkLeaderboard(bot))
