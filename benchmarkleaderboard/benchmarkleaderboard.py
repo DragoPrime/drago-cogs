@@ -11,11 +11,16 @@ class BenchmarkLeaderboard(commands.Cog):
         self.config = Config.get_conf(self, identifier=1234567890, force_registration=True)
         
         # Define the structure of the configuration
-        default_global = {}
-        self.config.register_global(**default_global)
+        self.config.register_global(
+            leaderboards={}
+        )
         
         # Leaderboard will be stored in memory and periodically saved
         self.leaderboards: Dict[str, Dict[int, float]] = {}
+
+    async def cog_load(self):
+        """Load leaderboard data when the cog is loaded"""
+        await self.load_leaderboard()
 
     @commands.group(invoke_without_command=True)
     async def benchmark(self, ctx):
@@ -130,17 +135,8 @@ class BenchmarkLeaderboard(commands.Cog):
 
     async def save_leaderboard(self):
         """Save the current leaderboard state"""
-        await self.config.set(self.leaderboards)
+        await self.config.leaderboards.set(self.leaderboards)
 
     async def load_leaderboard(self):
         """Load the leaderboard from config"""
-        loaded_data = await self.config.get_raw()
-        self.leaderboards = loaded_data if loaded_data else {}
-
-    def cog_load(self):
-        """Called when the cog is loaded"""
-        self.bot.loop.create_task(self.load_leaderboard())
-
-def setup(bot: Red):
-    """Add the cog to the bot"""
-    bot.add_cog(BenchmarkLeaderboard(bot))
+        self.leaderboards = await self.config.leaderboards() or {}
