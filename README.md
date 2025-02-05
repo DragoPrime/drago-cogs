@@ -11,6 +11,7 @@ Note: Some cogs will be in romanian language. If you want to use them, fork them
 | --- | ----------- |
 | BenchmarkLeaderboard | <details><summary>Allows users to add, view, and manage benchmarking leaderboards</summary>Allows users to add, view, and manage benchmarking leaderboards</details>
 | JellyfinSearch | <details><summary>Lets you search your Jellyfin server</summary>This cog is in romanian language and a custom command to search</details>
+| Inara | <details><summary>Display the signature image from Inara</summary>Display the signature image from Inara</details>
 
 
 ## BenchmarkLeaderboard
@@ -30,3 +31,7 @@ Note: Some cogs will be in romanian language. If you want to use them, fork them
 **`[p]setjellyfinapi your_api_key`** - Set API key
 
 **`[p]freia [movie or series title]`** - Search the libraries
+
+## Inara
+
+**`[p]inara [user ID]`** - Display sig image
