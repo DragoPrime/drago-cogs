@@ -1,3 +1,3 @@
-def setup(bot):
+async def setup(bot):
     from .benchmarkleaderboard import BenchmarkLeaderboard
-    return bot.add_cog(BenchmarkLeaderboard(bot))
+    await bot.add_cog(BenchmarkLeaderboard(bot))
