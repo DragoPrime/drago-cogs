@@ -1,4 +1,3 @@
-from .benchmarkleaderboard import BenchmarkLeaderboard
-
 def setup(bot):
-    bot.add_cog(BenchmarkLeaderboard(bot))
+    from .benchmarkleaderboard import BenchmarkLeaderboard
+    return bot.add_cog(BenchmarkLeaderboard(bot))
