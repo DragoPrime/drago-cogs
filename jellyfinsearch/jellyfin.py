@@ -72,7 +72,7 @@ class JellyfinSearch(commands.Cog):
                         items = data.get('Items', [])
 
                         if not items:
-                            return await ctx.send("Nu s-au găsit rezultate.")
+                            return await ctx.send("Nu s-au găsit rezultate. Atenție: căutarea se face după titlul de pe TMDB (cel în engleză, nu japoneză).")
 
                         embed = discord.Embed(
                             title=f"Rezultate pentru '{query}'",
