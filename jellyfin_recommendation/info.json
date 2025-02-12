@@ -1,0 +1,14 @@
+{
+    "name": "JellyfinRecommendation",
+    "short": "Oferă recomandări săptămânale de filme și seriale de pe serverul Jellyfin",
+    "description": "Un modul care trimite automat o recomandare aleatorie de film sau serial în fiecare luni la ora 18:00 într-un canal specificat.",
+    "end_user_data_statement": "Acest modul nu stochează date personale ale utilizatorilor.",
+    "author": ["Drago Prime"],
+    "required_cogs": {},
+    "requirements": ["aiohttp"],
+    "tags": ["jellyfin", "recommendation", "media", "weekly"],
+    "min_bot_version": "3.5.0",
+    "hidden": false,
+    "disabled": false,
+    "type": "COG"
+}
