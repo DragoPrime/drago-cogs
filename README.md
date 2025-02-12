@@ -12,7 +12,7 @@ Note: Some cogs will be in romanian language. If you want to use them, fork them
 | BenchmarkLeaderboard | <details><summary>Allows users to add, view, and manage benchmarking leaderboards</summary>Allows users to add, view, and manage benchmarking leaderboards</details>
 | JellyfinSearch | <details><summary>Lets you search your Jellyfin server</summary>This cog is in romanian language and a custom command to search</details>
 | Inara | <details><summary>Display the signature image from Inara</summary>Display the signature image from Inara</details>
-| Jellyfin Recommendation | <details><summary>Recommend a title from Jellyfin every Monday at 06:00 PM</summary>This cog is in romanian language and a custom command to search</details>
+| Jellyfin Recommendation | <details><summary>Recommend a title from Jellyfin every Monday at 06:00 PM</summary>This cog is in romanian language and a custom command to recommend</details>
 
 
 ## BenchmarkLeaderboard
