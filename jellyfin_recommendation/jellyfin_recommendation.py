@@ -1,4 +1,5 @@
-from redbot.core import commands, tasks
+from redbot.core import commands
+from redbot.core.utils import tasks
 import aiohttp
 import random
 import discord
