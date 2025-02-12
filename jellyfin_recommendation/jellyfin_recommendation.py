@@ -155,12 +155,19 @@ class JellyfinRecommendation(commands.Cog):
                 print(f"Error fetching recommendation: {e}")
                 return None
 
-    @commands.command()
-    async def recommend(self, ctx):
-        """Manually trigger a random Jellyfin recommendation"""
+    @commands.command(name="recomanda")
+    async def recomanda(self, ctx):
+        """Generează manual o recomandare aleatorie de film sau serial"""
         settings = await self.config.guild(ctx.guild).all()
         if not all(settings.values()):
-            return await ctx.send("Te rog să configurezi mai întâi URL-ul și API-ul Jellyfin.")
+            help_msg = (
+                "⚠️ Configurarea nu este completă. Folosește următoarele comenzi pentru a seta totul:\n\n"
+                f"`{ctx.prefix}recseturl <URL>` - Setează URL-ul serverului Jellyfin\n"
+                f"`{ctx.prefix}recsetapi <API_KEY>` - Setează cheia API Jellyfin\n"
+                f"`{ctx.prefix}setrecommendationchannel <#CANAL>` - Setează canalul pentru recomandări\n\n"
+                f"Poți verifica setările curente folosind `{ctx.prefix}showrecsettings`"
+            )
+            return await ctx.send(help_msg)
 
         item = await self.get_random_recommendation(settings['base_url'], settings['api_key'])
         if not item:
