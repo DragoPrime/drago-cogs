@@ -1,4 +1,4 @@
-from redbot.core import commands
+from redbot.core import commands, Config
 import asyncio
 import aiohttp
 import random
@@ -10,9 +10,20 @@ class JellyfinRecommendation(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.base_url = None
-        self.api_key = None
-        self.channel_id = None
+        self.config = Config.get_conf(
+            self,
+            identifier=987654321,  # Identificator unic pentru acest cog
+            force_registration=True
+        )
+        
+        # Setări implicite
+        default_guild = {
+            "base_url": None,
+            "api_key": None,
+            "channel_id": None
+        }
+        
+        self.config.register_guild(**default_guild)
         self.bg_task = None
         self.start_tasks()
 
@@ -28,18 +39,23 @@ class JellyfinRecommendation(commands.Cog):
         await self.bot.wait_until_ready()
         while True:
             now = datetime.now()
-            # Verifică dacă este luni și ora 18:00
             if now.weekday() == 0 and now.hour == 18:
-                await self.send_recommendation()
-            # Așteaptă o oră înainte de următoarea verificare
+                # Iterăm prin toate guild-urile configurate
+                all_guilds = await self.config.all_guilds()
+                for guild_id, settings in all_guilds.items():
+                    if all(settings.values()):  # Verificăm dacă toate setările sunt configurate
+                        guild = self.bot.get_guild(guild_id)
+                        if guild:
+                            await self.send_recommendation(guild)
             await asyncio.sleep(3600)  # 3600 secunde = 1 oră
 
-    async def send_recommendation(self):
+    async def send_recommendation(self, guild):
         """Send a recommendation to the configured channel"""
-        if not all([self.base_url, self.api_key, self.channel_id]):
+        settings = await self.config.guild(guild).all()
+        if not all(settings.values()):
             return
 
-        item = await self.get_random_recommendation()
+        item = await self.get_random_recommendation(settings['base_url'], settings['api_key'])
         if not item:
             return
 
@@ -65,41 +81,68 @@ class JellyfinRecommendation(commands.Cog):
 
         item_id = item.get('Id')
         if item_id:
-            web_url = f"{self.base_url}/web/index.html#!/details?id={item_id}"
+            web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
             embed.add_field(name="Detalii", value=f"[Vezi pe Jellyfin]({web_url})", inline=False)
 
-        channel = self.bot.get_channel(self.channel_id)
+        channel = guild.get_channel(settings['channel_id'])
         if channel:
             await channel.send(f"🎬 Recomandarea de {item_type} pentru săptămâna aceasta:", embed=embed)
 
     @commands.command()
-    @commands.is_owner()
-    async def setjellyfinurl(self, ctx, url: str):
-        """Set the Jellyfin server URL"""
-        self.base_url = url.rstrip('/')
-        await ctx.send(f"URL-ul serverului Jellyfin a fost setat la: {self.base_url}")
+    @commands.admin_or_permissions(administrator=True)
+    async def recseturl(self, ctx, url: str):
+        """Set the Jellyfin server URL for recommendations"""
+        url = url.rstrip('/')
+        await self.config.guild(ctx.guild).base_url.set(url)
+        await ctx.send(f"URL-ul serverului Jellyfin pentru recomandări a fost setat la: {url}")
 
     @commands.command()
-    @commands.is_owner()
-    async def setjellyfinapi(self, ctx, api_key: str):
-        """Set the Jellyfin API key"""
-        self.api_key = api_key
-        await ctx.send("Cheia API Jellyfin a fost setată.")
+    @commands.admin_or_permissions(administrator=True)
+    async def recsetapi(self, ctx, api_key: str):
+        """Set the Jellyfin API key for recommendations"""
+        await self.config.guild(ctx.guild).api_key.set(api_key)
+        await ctx.send("Cheia API Jellyfin pentru recomandări a fost setată.")
         await ctx.message.delete()
 
     @commands.command()
-    @commands.is_owner()
+    @commands.admin_or_permissions(administrator=True)
     async def setrecommendationchannel(self, ctx, channel: discord.TextChannel):
         """Set the channel for Monday recommendations"""
-        self.channel_id = channel.id
+        await self.config.guild(ctx.guild).channel_id.set(channel.id)
         await ctx.send(f"Canalul pentru recomandări a fost setat la: {channel.mention}")
 
-    async def get_random_recommendation(self):
-        """Fetch a random recommendation"""
-        if not all([self.base_url, self.api_key]):
-            return None
+    @commands.command()
+    @commands.admin_or_permissions(administrator=True)
+    async def showrecsettings(self, ctx):
+        """Show current recommendation settings"""
+        settings = await self.config.guild(ctx.guild).all()
+        channel = ctx.guild.get_channel(settings['channel_id']) if settings['channel_id'] else None
+        
+        embed = discord.Embed(
+            title="Setări Recomandări Jellyfin",
+            color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="URL Server", 
+            value=settings['base_url'] or "Nesetat",
+            inline=False
+        )
+        embed.add_field(
+            name="API Key", 
+            value="Setat ✓" if settings['api_key'] else "Nesetat ✗",
+            inline=False
+        )
+        embed.add_field(
+            name="Canal Recomandări", 
+            value=channel.mention if channel else "Nesetat",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
 
-        search_url = f"{self.base_url}/Items?IncludeItemTypes=Movie,Series&Recursive=true&SortBy=Random&Limit=1&api_key={self.api_key}"
+    async def get_random_recommendation(self, base_url, api_key):
+        """Fetch a random recommendation"""
+        search_url = f"{base_url}/Items?IncludeItemTypes=Movie,Series&Recursive=true&SortBy=Random&Limit=1&api_key={api_key}"
 
         async with aiohttp.ClientSession() as session:
             try:
@@ -115,10 +158,11 @@ class JellyfinRecommendation(commands.Cog):
     @commands.command()
     async def recommend(self, ctx):
         """Manually trigger a random Jellyfin recommendation"""
-        if not all([self.base_url, self.api_key]):
+        settings = await self.config.guild(ctx.guild).all()
+        if not all(settings.values()):
             return await ctx.send("Te rog să configurezi mai întâi URL-ul și API-ul Jellyfin.")
 
-        item = await self.get_random_recommendation()
+        item = await self.get_random_recommendation(settings['base_url'], settings['api_key'])
         if not item:
             return await ctx.send("Nu s-a putut genera o recomandare.")
 
@@ -144,7 +188,7 @@ class JellyfinRecommendation(commands.Cog):
 
         item_id = item.get('Id')
         if item_id:
-            web_url = f"{self.base_url}/web/index.html#!/details?id={item_id}"
+            web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
             embed.add_field(name="Detalii", value=f"[Vezi pe Jellyfin]({web_url})", inline=False)
 
         await ctx.send(f"🎬 Recomandare: {item_type}", embed=embed)
