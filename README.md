@@ -12,6 +12,7 @@ Note: Some cogs will be in romanian language. If you want to use them, fork them
 | BenchmarkLeaderboard | <details><summary>Allows users to add, view, and manage benchmarking leaderboards</summary>Allows users to add, view, and manage benchmarking leaderboards</details>
 | JellyfinSearch | <details><summary>Lets you search your Jellyfin server</summary>This cog is in romanian language and a custom command to search</details>
 | Inara | <details><summary>Display the signature image from Inara</summary>Display the signature image from Inara</details>
+| Jellyfin Recommendation | <details><summary>Recommend a title from Jellyfin every Monday at 06:00 PM</summary>This cog is in romanian language and a custom command to search</details>
 
 
 ## BenchmarkLeaderboard
@@ -35,3 +36,15 @@ Note: Some cogs will be in romanian language. If you want to use them, fork them
 ## Inara
 
 **`[p]inara [user ID]`** - Display sig image
+
+## Jellyfin Recommendation
+
+**`[p]recseturl https://your.jellyfin.server`** - Set Jellyfin server URL
+
+**`[p]recsetapi your_api_key`** - Set API key
+
+**`[p]setrecommendationchannel [#channel]`** - Set channel for recommendations
+
+**`[p]showrecsettings`** - View current settings
+
+**`[p]recomanda`** - Manually trigger the recommendation
