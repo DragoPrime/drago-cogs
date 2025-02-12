@@ -1,5 +1,5 @@
 from redbot.core import commands
-from redbot.core.utils import tasks
+import asyncio
 import aiohttp
 import random
 import discord
@@ -13,10 +13,64 @@ class JellyfinRecommendation(commands.Cog):
         self.base_url = None
         self.api_key = None
         self.channel_id = None
-        self.recommend_task = self.monday_recommendation.start()
+        self.bg_task = None
+        self.start_tasks()
 
+    def start_tasks(self):
+        self.bg_task = self.bot.loop.create_task(self.monday_recommendation_loop())
+        
     def cog_unload(self):
-        self.recommend_task.cancel()
+        if self.bg_task:
+            self.bg_task.cancel()
+
+    async def monday_recommendation_loop(self):
+        """Background loop for Monday recommendations"""
+        await self.bot.wait_until_ready()
+        while True:
+            now = datetime.now()
+            # Verifică dacă este luni și ora 18:00
+            if now.weekday() == 0 and now.hour == 18:
+                await self.send_recommendation()
+            # Așteaptă o oră înainte de următoarea verificare
+            await asyncio.sleep(3600)  # 3600 secunde = 1 oră
+
+    async def send_recommendation(self):
+        """Send a recommendation to the configured channel"""
+        if not all([self.base_url, self.api_key, self.channel_id]):
+            return
+
+        item = await self.get_random_recommendation()
+        if not item:
+            return
+
+        title = item.get('Name', 'Titlu necunoscut')
+        year = item.get('ProductionYear', 'An necunoscut')
+        item_type = "Film" if item.get('Type') == "Movie" else "Serial"
+        
+        overview = item.get('Overview', 'Fără descriere disponibilă.')
+        if len(overview) > 1000:
+            overview = overview[:997] + "..."
+
+        embed = discord.Embed(
+            title=f"Recomandarea Săptămânii: {title} ({year})",
+            description=overview,
+            color=discord.Color.blue()
+        )
+        
+        if genres := item.get('Genres', [])[:3]:
+            embed.add_field(name="Genuri", value=", ".join(genres), inline=True)
+        
+        if community_rating := item.get('CommunityRating'):
+            embed.add_field(name="Rating", value=f"⭐ {community_rating:.1f}", inline=True)
+
+        item_id = item.get('Id')
+        if item_id:
+            web_url = f"{self.base_url}/web/index.html#!/details?id={item_id}"
+            embed.add_field(name="Detalii", value=f"[Vezi pe Jellyfin]({web_url})", inline=False)
+
+        channel = self.bot.get_channel(self.channel_id)
+        if channel:
+            await channel.send(f"🎬 Recomandarea de {item_type} pentru săptămâna aceasta:", embed=embed)
 
     @commands.command()
     @commands.is_owner()
@@ -94,53 +148,3 @@ class JellyfinRecommendation(commands.Cog):
             embed.add_field(name="Detalii", value=f"[Vezi pe Jellyfin]({web_url})", inline=False)
 
         await ctx.send(f"🎬 Recomandare: {item_type}", embed=embed)
-
-    @tasks.loop(hours=24)
-    async def monday_recommendation(self):
-        """Send a random recommendation every Monday at 6 PM"""
-        # Check if all required settings are configured
-        if not all([self.base_url, self.api_key, self.channel_id]):
-            return
-
-        # Only run on Mondays at 6 PM
-        now = datetime.now()
-        if now.weekday() != 0 or now.hour != 18:
-            return
-
-        item = await self.get_random_recommendation()
-        if not item:
-            return
-
-        title = item.get('Name', 'Titlu necunoscut')
-        year = item.get('ProductionYear', 'An necunoscut')
-        item_type = "Film" if item.get('Type') == "Movie" else "Serial"
-        
-        overview = item.get('Overview', 'Fără descriere disponibilă.')
-        if len(overview) > 1000:
-            overview = overview[:997] + "..."
-
-        embed = discord.Embed(
-            title=f"Recomandarea Săptămânii: {title} ({year})",
-            description=overview,
-            color=discord.Color.blue()
-        )
-        
-        if genres := item.get('Genres', [])[:3]:
-            embed.add_field(name="Genuri", value=", ".join(genres), inline=True)
-        
-        if community_rating := item.get('CommunityRating'):
-            embed.add_field(name="Rating", value=f"⭐ {community_rating:.1f}", inline=True)
-
-        item_id = item.get('Id')
-        if item_id:
-            web_url = f"{self.base_url}/web/index.html#!/details?id={item_id}"
-            embed.add_field(name="Detalii", value=f"[Vezi pe Jellyfin]({web_url})", inline=False)
-
-        # Send to configured channel
-        channel = self.bot.get_channel(self.channel_id)
-        if channel:
-            await channel.send(f"🎬 Recomandarea de {item_type} pentru săptămâna aceasta:", embed=embed)
-
-    @monday_recommendation.before_loop
-    async def before_monday_recommendation(self):
-        await self.bot.wait_until_ready()
