@@ -182,7 +182,7 @@ class JellyfinRecommendation(commands.Cog):
             overview = overview[:997] + "..."
 
         embed = discord.Embed(
-            title=f"Recomandarea Momentului: {title} ({year})",
+            title=f"{title} ({year})",
             description=overview,
             color=discord.Color.blue()
         )
