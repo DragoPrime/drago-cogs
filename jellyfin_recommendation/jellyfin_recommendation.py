@@ -176,16 +176,20 @@ class JellyfinRecommendation(commands.Cog):
         title = item.get('Name', 'Titlu necunoscut')
         year = item.get('ProductionYear', 'An necunoscut')
         item_type = "Film" if item.get('Type') == "Movie" else "Serial"
-        
-        overview = item.get('Overview', 'Fără descriere disponibilă.')
-        if len(overview) > 1000:
-            overview = overview[:997] + "..."
 
         embed = discord.Embed(
-            title=f"Recomandarea Momentului: {title} ({year})",
-            description=overview,
+            title=f"{title} ({year})",
             color=discord.Color.blue()
         )
+        
+        # Adăugăm thumbnail-ul de la TMDB dacă există
+        if item.get('ProviderIds', {}).get('Tmdb'):
+            tmdb_id = item['ProviderIds']['Tmdb']
+            if item_type == "Film":
+                image_url = f"https://image.tmdb.org/t/p/w500/movie/{tmdb_id}/poster"
+            else:
+                image_url = f"https://image.tmdb.org/t/p/w500/tv/{tmdb_id}/poster"
+            embed.set_thumbnail(url=image_url)
         
         if genres := item.get('Genres', [])[:3]:
             embed.add_field(name="Genuri", value=", ".join(genres), inline=True)
@@ -196,6 +200,6 @@ class JellyfinRecommendation(commands.Cog):
         item_id = item.get('Id')
         if item_id:
             web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
-            embed.add_field(name="Detalii", value=f"[Vezi pe Jellyfin]({web_url})", inline=False)
+            embed.add_field(name="Detalii", value=f"[Vezi pe Freia]({web_url})", inline=False)
 
         await ctx.send(f"🎬 Recomandare: {item_type}", embed=embed)
