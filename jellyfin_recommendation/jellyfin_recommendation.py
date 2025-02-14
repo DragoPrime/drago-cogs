@@ -196,6 +196,6 @@ class JellyfinRecommendation(commands.Cog):
         item_id = item.get('Id')
         if item_id:
             web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
-            embed.add_field(name="Detalii", value=f"[Vezi pe Jellyfin]({web_url})", inline=False)
+            embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
 
         await ctx.send(f"🎬 Recomandare: {item_type}", embed=embed)
