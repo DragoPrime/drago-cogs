@@ -140,28 +140,31 @@ class CalendarSync(commands.Cog):
             return False
 
     def get_calendar_service(self, credentials_content: str) -> Optional[object]:
-        """Create and return Google Calendar service"""
-        try:
-            # Check if we have a cached service for these credentials
-            if credentials_content in self._calendar_service_cache:
-                return self._calendar_service_cache[credentials_content]
-            
-            # Decode base64 credentials
-            credentials_dict = json.loads(base64.b64decode(credentials_content).decode('utf-8'))
-            
-            credentials = service_account.Credentials.from_service_account_info(
-                credentials_dict,
-                scopes=['https://www.googleapis.com/auth/calendar.events']
-            )
-            
-            service = build('calendar', 'v3', credentials=credentials)
-            
-            # Cache the service
-            self._calendar_service_cache[credentials_content] = service
-            return service
-        except Exception as e:
-            print(f"Error creating calendar service: {e}")
-            raise
+    """Create and return Google Calendar service"""
+    try:
+        # Check if we have a cached service for these credentials
+        if credentials_content in self._calendar_service_cache:
+            return self._calendar_service_cache[credentials_content]
+        
+        # Decode base64 credentials
+        credentials_dict = json.loads(base64.b64decode(credentials_content).decode('utf-8'))
+        
+        credentials = service_account.Credentials.from_service_account_info(
+            credentials_dict,
+            scopes=[
+                'https://www.googleapis.com/auth/calendar',  # Full access to all calendars
+                'https://www.googleapis.com/auth/calendar.events'  # Access to calendar events
+            ]
+        )
+        
+        service = build('calendar', 'v3', credentials=credentials)
+        
+        # Cache the service
+        self._calendar_service_cache[credentials_content] = service
+        return service
+    except Exception as e:
+        print(f"Error creating calendar service: {e}")
+        raise
 
     @commands.Cog.listener()
     async def on_scheduled_event_create(self, event: discord.ScheduledEvent):
