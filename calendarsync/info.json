@@ -1,0 +1,15 @@
+{
+    "name": "CalendarSync",
+    "short": "Sync Discord events to Google Calendar",
+    "description": "Automatically syncs Discord scheduled events to a Google Calendar, making event management easier for your community.",
+    "end_user_data_statement": "This cog stores Google Calendar credentials for the server. No personal user data is stored.",
+    "install_msg": "Thanks for installing CalendarSync! First, set up your Google Calendar credentials using `[p]calendarset credentials` and calendar ID using `[p]calendarset setcalendar`.",
+    "author": ["Drago Prime"],
+    "required_cogs": {},
+    "requirements": ["google-api-python-client", "google-auth-httplib2", "google-auth-oauthlib", "pytz"],
+    "tags": ["calendar", "events", "google", "utility"],
+    "min_bot_version": "3.5.0",
+    "hidden": false,
+    "disabled": false,
+    "type": "COG"
+}
