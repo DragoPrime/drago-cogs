@@ -15,7 +15,7 @@ Note:
 | JellyfinSearch | <details><summary>Lets you search your Jellyfin server</summary>This cog is in romanian language and a custom command to search</details>
 | Inara | <details><summary>Display the signature image from Inara</summary>Display the signature image from Inara</details>
 | Jellyfin Recommendation | <details><summary>Recommend a title from Jellyfin every Monday at 06:00 PM</summary>This cog is in romanian language and a custom command to recommend</details>
-
+| Calendar Sync | <details><summary>Syncs Discord scheduled events to a Google Calendar</summary>Syncs Discord scheduled events to a Google Calendar</details>
 
 ## BenchmarkLeaderboard
 
@@ -50,3 +50,17 @@ Note:
 **`[p]showrecsettings`** - View current settings
 
 **`[p]recomanda`** - Manually trigger the recommendation
+
+## Calendar Sync
+
+**`[p]pipinstall google-api-python-client google-auth-httplib2 google-auth-oauthlib pytz google.api_core`** - Install dependencies
+
+**`[p]calendarset setcalendar <your_calendar_id>`** - Set Google Calendar ID
+
+**`[p]calendarset settimezone <your_timezone>`** - Set TimeZone
+
+**`[p]calendarset credentials`** - Upload your Google service account JSON file when prompted
+
+**`[p]calendarset verify`** - Verify all settings are working
+
+**`[p]calendarset settings`** - Show current settings
