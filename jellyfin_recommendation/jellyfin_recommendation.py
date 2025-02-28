@@ -306,6 +306,6 @@ class JellyfinRecommendation(commands.Cog):
             embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
             
         # Adăugare text informativ despre comanda manuală
-        embed.add_field(name="Caută mai multe recomandări", value="Folosește comanda `.recomanda` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
+        embed.add_field(name="Caută mai multe recomandări:", value="Folosește comanda `.recomanda` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
 
         await ctx.send(embed=embed)
