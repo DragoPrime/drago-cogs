@@ -105,7 +105,9 @@ class JellyfinRecommendation(commands.Cog):
         title = item.get('Name', 'Titlu necunoscut')
         year = item.get('ProductionYear', 'An necunoscut')
         is_movie = item.get('Type') == "Movie"
-        collection_name = item.get('CollectionName', 'Bibliotecă necunoscută')
+        
+        # Determinarea tipului bazat pe Type din Jellyfin
+        media_type = "Film" if is_movie else "Serial"
         
         # Descriere inițială din Jellyfin
         overview = item.get('Overview', 'Fără descriere disponibilă.')
@@ -134,8 +136,8 @@ class JellyfinRecommendation(commands.Cog):
             poster_url = f"{self.poster_base_url}{tmdb_data['poster_path']}"
             embed.set_thumbnail(url=poster_url)
         
-        # Adăugare tip (numele bibliotecii)
-        embed.add_field(name="Bibliotecă", value=collection_name, inline=True)
+        # Adăugare tip (Film/Serial)
+        embed.add_field(name="Tip", value=media_type, inline=True)
         
         if genres := item.get('Genres', [])[:3]:
             embed.add_field(name="Genuri", value=", ".join(genres), inline=True)
@@ -258,7 +260,9 @@ class JellyfinRecommendation(commands.Cog):
         title = item.get('Name', 'Titlu necunoscut')
         year = item.get('ProductionYear', 'An necunoscut')
         is_movie = item.get('Type') == "Movie"
-        collection_name = item.get('CollectionName', 'Bibliotecă necunoscută')
+        
+        # Determinarea tipului bazat pe Type din Jellyfin
+        media_type = "Film" if is_movie else "Serial"
         
         # Descriere inițială din Jellyfin
         overview = item.get('Overview', 'Fără descriere disponibilă.')
@@ -287,8 +291,8 @@ class JellyfinRecommendation(commands.Cog):
             poster_url = f"{self.poster_base_url}{tmdb_data['poster_path']}"
             embed.set_thumbnail(url=poster_url)
         
-        # Adăugare tip (numele bibliotecii)
-        embed.add_field(name="Bibliotecă", value=collection_name, inline=True)
+        # Adăugare tip (Film/Serial)
+        embed.add_field(name="Tip", value=media_type, inline=True)
         
         if genres := item.get('Genres', [])[:3]:
             embed.add_field(name="Genuri", value=", ".join(genres), inline=True)
