@@ -156,7 +156,7 @@ class JellyfinRecommendation(commands.Cog):
         channel = guild.get_channel(settings['channel_id'])
         if channel:
             # Adăugare text "Recomandarea Săptămânii:" înainte de embed
-            await channel.send("**Recomandarea Săptămânii:**", embed=embed)
+            await channel.send("**Freia vă recomandă să vizionați săptămâna aceasta:**", embed=embed)
 
     @commands.command()
     @commands.admin_or_permissions(administrator=True)
