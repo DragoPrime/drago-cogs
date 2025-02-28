@@ -20,12 +20,15 @@ class JellyfinRecommendation(commands.Cog):
         default_guild = {
             "base_url": None,
             "api_key": None,
-            "channel_id": None
+            "channel_id": None,
+            "tmdb_api_key": None
         }
         
         self.config.register_guild(**default_guild)
         self.bg_task = None
         self.start_tasks()
+        self.tmdb_base_url = "https://api.themoviedb.org/3"
+        self.poster_base_url = "https://image.tmdb.org/t/p/w500"
 
     def start_tasks(self):
         self.bg_task = self.bot.loop.create_task(self.monday_recommendation_loop())
@@ -43,16 +46,38 @@ class JellyfinRecommendation(commands.Cog):
                 # Iterăm prin toate guild-urile configurate
                 all_guilds = await self.config.all_guilds()
                 for guild_id, settings in all_guilds.items():
-                    if all(settings.values()):  # Verificăm dacă toate setările sunt configurate
+                    if all(k in settings and settings[k] for k in ['base_url', 'api_key', 'channel_id']):  # Verificăm setările esențiale
                         guild = self.bot.get_guild(guild_id)
                         if guild:
                             await self.send_recommendation(guild)
             await asyncio.sleep(3600)  # 3600 secunde = 1 oră
 
+    async def search_tmdb(self, title, year, is_movie, tmdb_api_key):
+        """Caută pe TMDb și returnează URL-ul posterului"""
+        if not tmdb_api_key:
+            return None
+            
+        media_type = "movie" if is_movie else "tv"
+        search_url = f"{self.tmdb_base_url}/search/{media_type}?api_key={tmdb_api_key}&query={title}&year={year}"
+        
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(search_url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        results = data.get('results', [])
+                        if results:
+                            poster_path = results[0].get('poster_path')
+                            if poster_path:
+                                return f"{self.poster_base_url}{poster_path}"
+            except Exception as e:
+                print(f"Error searching TMDb: {e}")
+        return None
+
     async def send_recommendation(self, guild):
         """Send a recommendation to the configured channel"""
         settings = await self.config.guild(guild).all()
-        if not all(settings.values()):
+        if not all(k in settings and settings[k] for k in ['base_url', 'api_key', 'channel_id']):
             return
 
         item = await self.get_random_recommendation(settings['base_url'], settings['api_key'])
@@ -61,17 +86,25 @@ class JellyfinRecommendation(commands.Cog):
 
         title = item.get('Name', 'Titlu necunoscut')
         year = item.get('ProductionYear', 'An necunoscut')
-        item_type = "Film" if item.get('Type') == "Movie" else "Serial"
+        is_movie = item.get('Type') == "Movie"
         
         overview = item.get('Overview', 'Fără descriere disponibilă.')
         if len(overview) > 1000:
             overview = overview[:997] + "..."
 
         embed = discord.Embed(
-            title=f"Recomandarea Săptămânii: {title} ({year})",
+            title=f"{title} ({year})",
             description=overview,
             color=discord.Color.blue()
         )
+        
+        # Căutare poster pe TMDb
+        poster_url = None
+        if 'tmdb_api_key' in settings and settings['tmdb_api_key']:
+            poster_url = await self.search_tmdb(title, year, is_movie, settings['tmdb_api_key'])
+        
+        if poster_url:
+            embed.set_thumbnail(url=poster_url)
         
         if genres := item.get('Genres', [])[:3]:
             embed.add_field(name="Genuri", value=", ".join(genres), inline=True)
@@ -86,7 +119,7 @@ class JellyfinRecommendation(commands.Cog):
 
         channel = guild.get_channel(settings['channel_id'])
         if channel:
-            await channel.send(f"🎬 Recomandarea de {item_type} pentru săptămâna aceasta:", embed=embed)
+            await channel.send(embed=embed)
 
     @commands.command()
     @commands.admin_or_permissions(administrator=True)
@@ -102,6 +135,14 @@ class JellyfinRecommendation(commands.Cog):
         """Set the Jellyfin API key for recommendations"""
         await self.config.guild(ctx.guild).api_key.set(api_key)
         await ctx.send("Cheia API Jellyfin pentru recomandări a fost setată.")
+        await ctx.message.delete()
+        
+    @commands.command()
+    @commands.admin_or_permissions(administrator=True)
+    async def recsettmdbapi(self, ctx, api_key: str):
+        """Setează cheia API pentru TMDb pentru a obține postere"""
+        await self.config.guild(ctx.guild).tmdb_api_key.set(api_key)
+        await ctx.send("Cheia API TMDb pentru postere a fost setată.")
         await ctx.message.delete()
 
     @commands.command()
@@ -128,8 +169,13 @@ class JellyfinRecommendation(commands.Cog):
             inline=False
         )
         embed.add_field(
-            name="API Key", 
+            name="API Key Jellyfin", 
             value="Setat ✓" if settings['api_key'] else "Nesetat ✗",
+            inline=False
+        )
+        embed.add_field(
+            name="API Key TMDb", 
+            value="Setat ✓" if settings.get('tmdb_api_key') else "Nesetat ✗",
             inline=False
         )
         embed.add_field(
@@ -159,11 +205,12 @@ class JellyfinRecommendation(commands.Cog):
     async def recomanda(self, ctx):
         """Generează manual o recomandare aleatorie de film sau serial"""
         settings = await self.config.guild(ctx.guild).all()
-        if not all(settings.values()):
+        if not all(k in settings and settings[k] for k in ['base_url', 'api_key']):
             help_msg = (
                 "⚠️ Configurarea nu este completă. Folosește următoarele comenzi pentru a seta totul:\n\n"
                 f"`{ctx.prefix}recseturl <URL>` - Setează URL-ul serverului Jellyfin\n"
                 f"`{ctx.prefix}recsetapi <API_KEY>` - Setează cheia API Jellyfin\n"
+                f"`{ctx.prefix}recsettmdbapi <API_KEY>` - Setează cheia API TMDb pentru postere (opțional)\n"
                 f"`{ctx.prefix}setrecommendationchannel <#CANAL>` - Setează canalul pentru recomandări\n\n"
                 f"Poți verifica setările curente folosind `{ctx.prefix}showrecsettings`"
             )
@@ -175,7 +222,7 @@ class JellyfinRecommendation(commands.Cog):
 
         title = item.get('Name', 'Titlu necunoscut')
         year = item.get('ProductionYear', 'An necunoscut')
-        item_type = "Film" if item.get('Type') == "Movie" else "Serial"
+        is_movie = item.get('Type') == "Movie"
         
         overview = item.get('Overview', 'Fără descriere disponibilă.')
         if len(overview) > 1000:
@@ -186,6 +233,14 @@ class JellyfinRecommendation(commands.Cog):
             description=overview,
             color=discord.Color.blue()
         )
+        
+        # Căutare poster pe TMDb
+        poster_url = None
+        if 'tmdb_api_key' in settings and settings['tmdb_api_key']:
+            poster_url = await self.search_tmdb(title, year, is_movie, settings['tmdb_api_key'])
+        
+        if poster_url:
+            embed.set_thumbnail(url=poster_url)
         
         if genres := item.get('Genres', [])[:3]:
             embed.add_field(name="Genuri", value=", ".join(genres), inline=True)
@@ -198,4 +253,4 @@ class JellyfinRecommendation(commands.Cog):
             web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
             embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
 
-        await ctx.send(f"🎬 Recomandare: {item_type}", embed=embed)
+        await ctx.send(embed=embed)
