@@ -53,7 +53,7 @@ class JellyfinRecommendation(commands.Cog):
             await asyncio.sleep(3600)  # 3600 secunde = 1 oră
 
     async def search_tmdb(self, title, year, is_movie, tmdb_api_key):
-        """Caută pe TMDb și returnează URL-ul posterului"""
+        """Caută pe TMDb și returnează datele filmului/serialului"""
         if not tmdb_api_key:
             return None
             
@@ -67,9 +67,27 @@ class JellyfinRecommendation(commands.Cog):
                         data = await response.json()
                         results = data.get('results', [])
                         if results:
-                            poster_path = results[0].get('poster_path')
-                            if poster_path:
-                                return f"{self.poster_base_url}{poster_path}"
+                            tmdb_data = results[0]
+                            tmdb_id = tmdb_data.get('id')
+                            
+                            # Obține detalii complete pentru a avea informații mai precise
+                            if tmdb_id:
+                                details_url = f"{self.tmdb_base_url}/{media_type}/{tmdb_id}?api_key={tmdb_api_key}"
+                                async with session.get(details_url) as details_response:
+                                    if details_response.status == 200:
+                                        details = await details_response.json()
+                                        return {
+                                            'poster_path': details.get('poster_path'),
+                                            'overview': details.get('overview'),
+                                            'tmdb_id': tmdb_id
+                                        }
+                            
+                            # Dacă nu putem obține detalii complete, folosim rezultatele din căutare
+                            return {
+                                'poster_path': tmdb_data.get('poster_path'),
+                                'overview': tmdb_data.get('overview'),
+                                'tmdb_id': tmdb_id
+                            }
             except Exception as e:
                 print(f"Error searching TMDb: {e}")
         return None
@@ -88,7 +106,19 @@ class JellyfinRecommendation(commands.Cog):
         year = item.get('ProductionYear', 'An necunoscut')
         is_movie = item.get('Type') == "Movie"
         
+        # Descriere inițială din Jellyfin
         overview = item.get('Overview', 'Fără descriere disponibilă.')
+        
+        # Căutare pe TMDb pentru poster și descriere
+        tmdb_data = None
+        if 'tmdb_api_key' in settings and settings['tmdb_api_key']:
+            tmdb_data = await self.search_tmdb(title, year, is_movie, settings['tmdb_api_key'])
+        
+        # Folosește descrierea TMDb dacă există și nu este goală
+        if tmdb_data and tmdb_data.get('overview'):
+            overview = tmdb_data['overview']
+        
+        # Limitează lungimea descrierii
         if len(overview) > 1000:
             overview = overview[:997] + "..."
 
@@ -98,12 +128,9 @@ class JellyfinRecommendation(commands.Cog):
             color=discord.Color.blue()
         )
         
-        # Căutare poster pe TMDb
-        poster_url = None
-        if 'tmdb_api_key' in settings and settings['tmdb_api_key']:
-            poster_url = await self.search_tmdb(title, year, is_movie, settings['tmdb_api_key'])
-        
-        if poster_url:
+        # Adaugă posterul TMDb dacă există
+        if tmdb_data and tmdb_data.get('poster_path'):
+            poster_url = f"{self.poster_base_url}{tmdb_data['poster_path']}"
             embed.set_thumbnail(url=poster_url)
         
         if genres := item.get('Genres', [])[:3]:
@@ -142,7 +169,7 @@ class JellyfinRecommendation(commands.Cog):
     async def recsettmdbapi(self, ctx, api_key: str):
         """Setează cheia API pentru TMDb pentru a obține postere"""
         await self.config.guild(ctx.guild).tmdb_api_key.set(api_key)
-        await ctx.send("Cheia API TMDb pentru postere a fost setată.")
+        await ctx.send("Cheia API TMDb pentru postere și descrieri a fost setată.")
         await ctx.message.delete()
 
     @commands.command()
@@ -210,7 +237,7 @@ class JellyfinRecommendation(commands.Cog):
                 "⚠️ Configurarea nu este completă. Folosește următoarele comenzi pentru a seta totul:\n\n"
                 f"`{ctx.prefix}recseturl <URL>` - Setează URL-ul serverului Jellyfin\n"
                 f"`{ctx.prefix}recsetapi <API_KEY>` - Setează cheia API Jellyfin\n"
-                f"`{ctx.prefix}recsettmdbapi <API_KEY>` - Setează cheia API TMDb pentru postere (opțional)\n"
+                f"`{ctx.prefix}recsettmdbapi <API_KEY>` - Setează cheia API TMDb pentru postere și descrieri (opțional)\n"
                 f"`{ctx.prefix}setrecommendationchannel <#CANAL>` - Setează canalul pentru recomandări\n\n"
                 f"Poți verifica setările curente folosind `{ctx.prefix}showrecsettings`"
             )
@@ -224,7 +251,19 @@ class JellyfinRecommendation(commands.Cog):
         year = item.get('ProductionYear', 'An necunoscut')
         is_movie = item.get('Type') == "Movie"
         
+        # Descriere inițială din Jellyfin
         overview = item.get('Overview', 'Fără descriere disponibilă.')
+        
+        # Căutare pe TMDb pentru poster și descriere
+        tmdb_data = None
+        if 'tmdb_api_key' in settings and settings['tmdb_api_key']:
+            tmdb_data = await self.search_tmdb(title, year, is_movie, settings['tmdb_api_key'])
+        
+        # Folosește descrierea TMDb dacă există și nu este goală
+        if tmdb_data and tmdb_data.get('overview'):
+            overview = tmdb_data['overview']
+        
+        # Limitează lungimea descrierii
         if len(overview) > 1000:
             overview = overview[:997] + "..."
 
@@ -234,12 +273,9 @@ class JellyfinRecommendation(commands.Cog):
             color=discord.Color.blue()
         )
         
-        # Căutare poster pe TMDb
-        poster_url = None
-        if 'tmdb_api_key' in settings and settings['tmdb_api_key']:
-            poster_url = await self.search_tmdb(title, year, is_movie, settings['tmdb_api_key'])
-        
-        if poster_url:
+        # Adaugă posterul TMDb dacă există
+        if tmdb_data and tmdb_data.get('poster_path'):
+            poster_url = f"{self.poster_base_url}{tmdb_data['poster_path']}"
             embed.set_thumbnail(url=poster_url)
         
         if genres := item.get('Genres', [])[:3]:
