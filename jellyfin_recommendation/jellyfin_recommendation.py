@@ -105,6 +105,7 @@ class JellyfinRecommendation(commands.Cog):
         title = item.get('Name', 'Titlu necunoscut')
         year = item.get('ProductionYear', 'An necunoscut')
         is_movie = item.get('Type') == "Movie"
+        collection_name = item.get('CollectionName', 'Bibliotecă necunoscută')
         
         # Descriere inițială din Jellyfin
         overview = item.get('Overview', 'Fără descriere disponibilă.')
@@ -133,6 +134,9 @@ class JellyfinRecommendation(commands.Cog):
             poster_url = f"{self.poster_base_url}{tmdb_data['poster_path']}"
             embed.set_thumbnail(url=poster_url)
         
+        # Adăugare tip (numele bibliotecii)
+        embed.add_field(name="Bibliotecă", value=collection_name, inline=True)
+        
         if genres := item.get('Genres', [])[:3]:
             embed.add_field(name="Genuri", value=", ".join(genres), inline=True)
         
@@ -143,10 +147,14 @@ class JellyfinRecommendation(commands.Cog):
         if item_id:
             web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
             embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
+        
+        # Adăugare text informativ despre comanda manuală
+        embed.add_field(name="Caută mai multe recomandări", value="Folosește comanda `.recomanda` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
 
         channel = guild.get_channel(settings['channel_id'])
         if channel:
-            await channel.send(embed=embed)
+            # Adăugare text "Recomandarea Săptămânii:" înainte de embed
+            await channel.send("**Recomandarea Săptămânii:**", embed=embed)
 
     @commands.command()
     @commands.admin_or_permissions(administrator=True)
@@ -250,6 +258,7 @@ class JellyfinRecommendation(commands.Cog):
         title = item.get('Name', 'Titlu necunoscut')
         year = item.get('ProductionYear', 'An necunoscut')
         is_movie = item.get('Type') == "Movie"
+        collection_name = item.get('CollectionName', 'Bibliotecă necunoscută')
         
         # Descriere inițială din Jellyfin
         overview = item.get('Overview', 'Fără descriere disponibilă.')
@@ -278,6 +287,9 @@ class JellyfinRecommendation(commands.Cog):
             poster_url = f"{self.poster_base_url}{tmdb_data['poster_path']}"
             embed.set_thumbnail(url=poster_url)
         
+        # Adăugare tip (numele bibliotecii)
+        embed.add_field(name="Bibliotecă", value=collection_name, inline=True)
+        
         if genres := item.get('Genres', [])[:3]:
             embed.add_field(name="Genuri", value=", ".join(genres), inline=True)
         
@@ -288,5 +300,8 @@ class JellyfinRecommendation(commands.Cog):
         if item_id:
             web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
             embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
+            
+        # Adăugare text informativ despre comanda manuală
+        embed.add_field(name="Caută mai multe recomandări", value="Folosește comanda `.recomanda` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
 
         await ctx.send(embed=embed)
