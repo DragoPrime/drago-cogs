@@ -43,7 +43,9 @@ Note:
 
 **`[p]recseturl https://your.jellyfin.server`** - Set Jellyfin server URL
 
-**`[p]recsetapi your_api_key`** - Set API key
+**`[p]recsetapi your_api_key`** - Set Jellyfin API key
+
+**`[p]recsettmdbapi TDB_api_key`** - Set TMDB API key (for thumbnail)
 
 **`[p]setrecommendationchannel [#channel]`** - Set channel for recommendations
 
