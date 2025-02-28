@@ -12,7 +12,7 @@ class JellyfinRecommendation(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(
             self,
-            identifier=987654321,  # Identificator unic pentru acest cog
+            identifier=983947321,  # Identificator unic pentru acest cog
             force_registration=True
         )
         
