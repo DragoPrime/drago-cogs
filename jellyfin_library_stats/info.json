@@ -1,0 +1,9 @@
+{
+    "author": ["Drago Prime"],
+    "name": "Jellyfin Library Stats",
+    "short": "Monitorizează statisticile bibliotecilor Jellyfin",
+    "description": "Un modul care actualizează zilnic statisticile bibliotecilor de pe un server Jellyfin",
+    "version": "1.0.0",
+    "requirements": ["aiohttp"],
+    "license": "MIT"
+}
