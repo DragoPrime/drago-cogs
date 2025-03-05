@@ -19,6 +19,9 @@ class JellyfinLibraryStats(commands.Cog):
             update_message_id=None,
             last_update=None
         )
+        
+        # Task pentru actualizare
+        self.update_task = None
 
     @commands.group(name="jellyfinstats")
     @commands.admin()
@@ -54,6 +57,9 @@ class JellyfinLibraryStats(commands.Cog):
         """Preia informațiile bibliotecilor de pe serverul Jellyfin"""
         jellyfin_url = await self.config.jellyfin_url()
         api_key = await self.config.jellyfin_api_key()
+
+        if not jellyfin_url or not api_key:
+            return None
 
         headers = {
             "X-Emby-Token": api_key
@@ -129,11 +135,9 @@ class JellyfinLibraryStats(commands.Cog):
 
     def cog_unload(self):
         """Oprește task-ul când cog-ul este descărcat"""
-        self.update_task.cancel()
+        if self.update_task:
+            self.update_task.cancel()
 
     async def cog_load(self):
         """Pornește task-ul de actualizare când cog-ul este încărcat"""
         self.update_task = self.bot.loop.create_task(self.update_stats_message())
-
-def setup(bot):
-    bot.add_cog(JellyfinLibraryStats(bot))
