@@ -37,7 +37,7 @@ class JellyfinLibraryStats(commands.Cog):
                                f"Jellyfin URL: {url}\n"
                                f"Canal actualizare: <#{channel_id}>")
             else:
-                await ctx.send("Nicio configurare salvată. Utilizați [p]jellyfinstats setup pentru a configura.")
+                await ctx.send("Nicio configurare salvată. Utilizați !jellyfinstats setup pentru a configura.")
 
     @jellyfin_stats.command(name="setup")
     async def setup_jellyfin_stats(self, ctx, jellyfin_url: str, api_key: str, channel: discord.TextChannel):
@@ -48,10 +48,19 @@ class JellyfinLibraryStats(commands.Cog):
         await self.config.update_channel_id.set(channel.id)
         
         # Trimite mesajul inițial care va fi actualizat
-        message = await channel.send("Actualizare statistici biblioteci Freia...")
+        message = await channel.send("Actualizare statistici biblioteci Jellyfin...")
         await self.config.update_message_id.set(message.id)
 
+        # Declanșează actualizarea imediată
+        await self.update_stats_message(force_update=True)
+
         await ctx.send("Configurare Jellyfin stats completată cu succes!")
+
+    @jellyfin_stats.command(name="update")
+    async def manual_update(self, ctx):
+        """Actualizează manual statisticile"""
+        await self.update_stats_message(force_update=True)
+        await ctx.send("Statistici actualizate manual!")
 
     async def fetch_jellyfin_libraries(self):
         """Preia informațiile bibliotecilor de pe serverul Jellyfin"""
@@ -87,51 +96,56 @@ class JellyfinLibraryStats(commands.Cog):
                 else:
                     return None
 
-    async def update_stats_message(self):
+    async def update_stats_message(self, force_update=False):
         """Actualizează mesajul cu statisticile bibliotecilor"""
+        # Verifică dacă sunt configurate toate elementele necesare
+        jellyfin_url = await self.config.jellyfin_url()
+        channel_id = await self.config.update_channel_id()
+        message_id = await self.config.update_message_id()
+        
+        if not all([jellyfin_url, channel_id, message_id]):
+            return
+
+        try:
+            # Preia statisticile bibliotecilor
+            library_stats = await self.fetch_jellyfin_libraries()
+
+            if library_stats:
+                channel = self.bot.get_channel(channel_id)
+                
+                # Construiește mesajul cu statistici
+                embed = discord.Embed(
+                    title="📊 Statistici Biblioteci Jellyfin",
+                    description=f"Actualizat la: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+                    color=discord.Color.blue()
+                )
+                
+                # Adaugă statistici pentru fiecare bibliotecă
+                for library_name, item_count in library_stats.items():
+                    embed.add_field(name=library_name, value=str(item_count), inline=False)
+
+                # Actualizează mesajul
+                message = await channel.fetch_message(message_id)
+                await message.edit(embed=embed)
+
+                # Salvează ultima dată de actualizare
+                await self.config.last_update.set(datetime.now().isoformat())
+
+        except Exception as e:
+            print(f"Eroare la actualizarea statisticilor: {e}")
+
+    async def background_update(self):
+        """Task de fundal pentru actualizare zilnică"""
         await self.bot.wait_until_ready()
 
         while not self.bot.is_closed():
             try:
-                # Verifică dacă sunt configurate toate elementele necesare
-                jellyfin_url = await self.config.jellyfin_url()
-                channel_id = await self.config.update_channel_id()
-                message_id = await self.config.update_message_id()
-                
-                if not all([jellyfin_url, channel_id, message_id]):
-                    await asyncio.sleep(3600)  # Verifică din nou peste o oră
-                    continue
-
-                # Preia statisticile bibliotecilor
-                library_stats = await self.fetch_jellyfin_libraries()
-
-                if library_stats:
-                    channel = self.bot.get_channel(channel_id)
-                    
-                    # Construiește mesajul cu statistici
-                    embed = discord.Embed(
-                        title="📊 Statistici Biblioteci Freia",
-                        description=f"Actualizat la: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
-                        color=discord.Color.blue()
-                    )
-                    
-                    # Adaugă statistici pentru fiecare bibliotecă
-                    for library_name, item_count in library_stats.items():
-                        embed.add_field(name=library_name, value=str(item_count), inline=False)
-
-                    # Actualizează mesajul
-                    message = await channel.fetch_message(message_id)
-                    await message.edit(embed=embed)
-
-                    # Salvează ultima dată de actualizare
-                    await self.config.last_update.set(datetime.now().isoformat())
-
-                # Așteaptă până în ziua următoare
+                # Actualizează o dată la 24 de ore
+                await self.update_stats_message()
                 await asyncio.sleep(86400)  # 24 de ore
-
             except Exception as e:
-                print(f"Eroare la actualizarea statisticilor: {e}")
-                await asyncio.sleep(86400)  # Chiar și în caz de eroare, așteaptă 24 de ore
+                print(f"Eroare în task-ul de fundal: {e}")
+                await asyncio.sleep(3600)  # Așteaptă o oră în caz de eroare
 
     def cog_unload(self):
         """Oprește task-ul când cog-ul este descărcat"""
@@ -140,4 +154,8 @@ class JellyfinLibraryStats(commands.Cog):
 
     async def cog_load(self):
         """Pornește task-ul de actualizare când cog-ul este încărcat"""
-        self.update_task = self.bot.loop.create_task(self.update_stats_message())
+        # Pornește actualizarea inițială
+        await self.update_stats_message(force_update=True)
+        
+        # Pornește task-ul de fundal pentru actualizări zilnice
+        self.update_task = self.bot.loop.create_task(self.background_update())
