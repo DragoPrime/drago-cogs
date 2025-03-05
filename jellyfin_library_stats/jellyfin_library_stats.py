@@ -37,7 +37,7 @@ class JellyfinLibraryStats(commands.Cog):
                                f"Jellyfin URL: {url}\n"
                                f"Canal actualizare: <#{channel_id}>")
             else:
-                await ctx.send("Nicio configurare salvată. Utilizați !jellyfinstats setup pentru a configura.")
+                await ctx.send("Nicio configurare salvată. Utilizați [p]jellyfinstats setup pentru a configura.")
 
     @jellyfin_stats.command(name="setup")
     async def setup_jellyfin_stats(self, ctx, jellyfin_url: str, api_key: str, channel: discord.TextChannel):
@@ -48,7 +48,7 @@ class JellyfinLibraryStats(commands.Cog):
         await self.config.update_channel_id.set(channel.id)
         
         # Trimite mesajul inițial care va fi actualizat
-        message = await channel.send("Actualizare statistici biblioteci Jellyfin...")
+        message = await channel.send("Actualizare statistici biblioteci Freia...")
         await self.config.update_message_id.set(message.id)
 
         await ctx.send("Configurare Jellyfin stats completată cu succes!")
@@ -110,7 +110,7 @@ class JellyfinLibraryStats(commands.Cog):
                     
                     # Construiește mesajul cu statistici
                     embed = discord.Embed(
-                        title="📊 Statistici Biblioteci Jellyfin",
+                        title="📊 Statistici Biblioteci Freia",
                         description=f"Actualizat la: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
                         color=discord.Color.blue()
                     )
