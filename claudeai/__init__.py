@@ -1,4 +1,4 @@
-from .claudeai import setup
+from .claudeai import ClaudeAI
 
 async def setup(bot):
     """Add the cog to the bot"""
