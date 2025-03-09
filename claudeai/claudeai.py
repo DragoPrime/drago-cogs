@@ -288,7 +288,3 @@ class ClaudeAI(commands.Cog):
         except Exception as e:
             log.error(f"Error in Claude API call: {e}")
             raise
-
-async def setup(bot: Red):
-    """Add the cog to the bot"""
-    await bot.add_cog(ClaudeAI(bot))
