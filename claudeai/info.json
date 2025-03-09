@@ -1,0 +1,13 @@
+{
+    "author": ["Drago prime"],
+    "install_msg": "Thanks for installing the Claude AI cog! To get started, set your API key with `[p]claude setapikey YOUR_API_KEY` (preferably in DMs). Then enable Claude in a channel with `[p]claude addchannel #channel-name`.",
+    "name": "ClaudeAI",
+    "short": "Integrates Claude AI by Anthropic with your Discord server",
+    "description": "Allows Claude AI to respond to messages in designated channels. Includes commands for configuration and direct interaction.",
+    "tags": ["ai", "claude", "anthropic", "chat"],
+    "requirements": ["anthropic"],
+    "min_bot_version": "3.5.0",
+    "hidden": false,
+    "disabled": false,
+    "type": "COG"
+}
