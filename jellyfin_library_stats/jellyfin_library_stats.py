@@ -162,82 +162,84 @@ class JellyfinLibraryStats(commands.Cog):
             log.error(f"Excepție la testarea conexiunii Jellyfin: {e}")
             return False
 
-    async def fetch_jellyfin_libraries(self):
-        """Preia informațiile bibliotecilor de pe serverul Jellyfin"""
-        jellyfin_url = await self.config.jellyfin_url()
-        api_key = await self.config.jellyfin_api_key()
+async def fetch_jellyfin_libraries(self):
+    """Preia informațiile bibliotecilor de pe serverul Jellyfin"""
+    jellyfin_url = await self.config.jellyfin_url()
+    api_key = await self.config.jellyfin_api_key()
 
-        if not jellyfin_url or not api_key:
-            log.error("URL-ul sau API key-ul nu sunt configurate")
-            return None
+    if not jellyfin_url or not api_key:
+        log.error("URL-ul sau API key-ul nu sunt configurate")
+        return None
 
-        headers = {"X-Emby-Token": api_key}
+    headers = {"X-Emby-Token": api_key}
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                # Preia lista de biblioteci
-                log.info(f"Preluare biblioteci de la {jellyfin_url}/Library/MediaFolders")
-                async with session.get(f"{jellyfin_url}/Library/MediaFolders", headers=headers) as libraries_response:
-                    log.info(f"Status răspuns: {libraries_response.status}")
+    try:
+        async with aiohttp.ClientSession() as session:
+            # Preia lista de biblioteci
+            log.info(f"Preluare biblioteci de la {jellyfin_url}/Library/MediaFolders")
+            async with session.get(f"{jellyfin_url}/Library/MediaFolders", headers=headers) as libraries_response:
+                log.info(f"Status răspuns: {libraries_response.status}")
+                
+                if libraries_response.status == 200:
+                    libraries_data = await libraries_response.json()
+                    libraries = libraries_data.get('Items', [])
+                    log.info(f"Număr biblioteci găsite: {len(libraries)}")
                     
-                    if libraries_response.status == 200:
-                        libraries_data = await libraries_response.json()
-                        libraries = libraries_data.get('Items', [])
-                        log.info(f"Număr biblioteci găsite: {len(libraries)}")
+                    # Colectează statisticile pentru fiecare bibliotecă
+                    library_stats = {}
+                    for library in libraries:
+                        library_id = library.get('Id')
+                        library_name = library.get('Name')
+                        log.info(f"Procesare bibliotecă: {library_name} (ID: {library_id})")
                         
-                        # Colectează statisticile pentru fiecare bibliotecă
-                        library_stats = {}
-                        for library in libraries:
-                            library_id = library.get('Id')
-                            library_name = library.get('Name')
-                            log.info(f"Procesare bibliotecă: {library_name} (ID: {library_id})")
+                        # Folosește endpoint-ul Items cu parametrii corecți
+                        try:
+                            # Endpoint nou pentru a obține numărul total de elemente
+                            items_url = f"{jellyfin_url}/Items?ParentId={library_id}&Recursive=true&Limit=0"
+                            log.info(f"Încercare endpoint: {items_url}")
                             
-                            # Încearcă mai multe endpoint-uri pentru a obține numărul de elemente
-                            try:
-                                # Metoda 1: /Items/Counts cu parentId
-                                counts_url = f"{jellyfin_url}/Items/Counts?parentId={library_id}"
-                                log.info(f"Încercare endpoint: {counts_url}")
+                            async with session.get(items_url, headers=headers) as items_response:
+                                log.info(f"Status răspuns items: {items_response.status}")
                                 
-                                async with session.get(counts_url, headers=headers) as count_response:
-                                    log.info(f"Status răspuns counts: {count_response.status}")
-                                    
-                                    if count_response.status == 200:
-                                        counts_data = await count_response.json()
-                                        item_count = counts_data.get('ItemCount', 0)
-                                        log.info(f"Număr elemente în {library_name}: {item_count}")
-                                        library_stats[library_name] = item_count
-                                    else:
-                                        # Metoda 2: Încercăm direct cu Items
-                                        items_url = f"{jellyfin_url}/Items?ParentId={library_id}&Recursive=true&Fields=BasicSyncInfo&Limit=0"
-                                        log.info(f"Încercare endpoint alternativ: {items_url}")
+                                if items_response.status == 200:
+                                    items_data = await items_response.json()
+                                    total_records = items_data.get('TotalRecordCount', 0)
+                                    log.info(f"Total înregistrări în {library_name}: {total_records}")
+                                    library_stats[library_name] = total_records
+                                else:
+                                    # Încearcă o altă abordare pentru biblioteci speciale sau playlists
+                                    if "playlist" in library_name.lower():
+                                        playlists_url = f"{jellyfin_url}/Playlists?SortBy=SortName&SortOrder=Ascending&Limit=0"
+                                        log.info(f"Încercare endpoint pentru playlists: {playlists_url}")
                                         
-                                        async with session.get(items_url, headers=headers) as items_response:
-                                            log.info(f"Status răspuns items: {items_response.status}")
-                                            
-                                            if items_response.status == 200:
-                                                items_data = await items_response.json()
-                                                total_records = items_data.get('TotalRecordCount', 0)
-                                                log.info(f"Total înregistrări în {library_name}: {total_records}")
-                                                library_stats[library_name] = total_records
+                                        async with session.get(playlists_url, headers=headers) as playlist_response:
+                                            if playlist_response.status == 200:
+                                                playlist_data = await playlist_response.json()
+                                                playlist_count = playlist_data.get('TotalRecordCount', 0)
+                                                log.info(f"Total playlists: {playlist_count}")
+                                                library_stats[library_name] = playlist_count
                                             else:
-                                                log.error(f"Ambele endpoint-uri au eșuat pentru biblioteca {library_name}")
+                                                log.error(f"Eroare la accesarea playlist-urilor: {playlist_response.status}")
                                                 library_stats[library_name] = 0
-                            except Exception as e:
-                                log.error(f"Excepție la obținerea numărului pentru biblioteca {library_name}: {e}")
-                                library_stats[library_name] = 0
-                        
-                        if library_stats:
-                            log.info(f"Stats colectate cu succes: {library_stats}")
-                            return library_stats
-                        else:
-                            log.error("Nu s-au găsit statistici")
-                            return None
+                                    else:
+                                        log.error(f"Eroare la accesarea elementelor din biblioteca {library_name}: {items_response.status}")
+                                        library_stats[library_name] = 0
+                        except Exception as e:
+                            log.error(f"Excepție la obținerea numărului pentru biblioteca {library_name}: {e}")
+                            library_stats[library_name] = 0
+                    
+                    if library_stats:
+                        log.info(f"Stats colectate cu succes: {library_stats}")
+                        return library_stats
                     else:
-                        log.error(f"Eroare la accesarea bibliotecilor: {libraries_response.status}")
+                        log.error("Nu s-au găsit statistici")
                         return None
-        except Exception as e:
-            log.error(f"Excepție generală la preluarea bibliotecilor: {e}")
-            return None
+                else:
+                    log.error(f"Eroare la accesarea bibliotecilor: {libraries_response.status}")
+                    return None
+    except Exception as e:
+        log.error(f"Excepție generală la preluarea bibliotecilor: {e}")
+        return None
 
     async def update_stats_message(self, force_update=False):
         """Actualizează mesajul cu statisticile bibliotecilor"""
