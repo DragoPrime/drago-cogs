@@ -190,13 +190,28 @@ class JellyfinLibraryStats(commands.Cog):
                         for library in libraries:
                             library_id = library.get('Id')
                             library_name = library.get('Name')
+                            
+                            # Ignoră biblioteca Playlists
+                            if "playlist" in library_name.lower():
+                                log.info(f"Ignorare bibliotecă: {library_name} (este playlist)")
+                                continue
+                            
                             log.info(f"Procesare bibliotecă: {library_name} (ID: {library_id})")
+                            
+                            # Verifică tipul de colecție
+                            collection_type = library.get('CollectionType', '').lower()
                             
                             # Folosește endpoint-ul Items cu parametrii corecți
                             try:
-                                # Endpoint nou pentru a obține numărul total de elemente
-                                items_url = f"{jellyfin_url}/Items?ParentId={library_id}&Recursive=true&Limit=0"
-                                log.info(f"Încercare endpoint: {items_url}")
+                                items_url = ""
+                                if "tvshows" in collection_type or "tv" in collection_type:
+                                    # Pentru biblioteci TV, numără doar serialele, nu episoadele
+                                    items_url = f"{jellyfin_url}/Items?ParentId={library_id}&IncludeItemTypes=Series&Recursive=true&Limit=0"
+                                    log.info(f"Bibliotecă TV detectată, numărare seriale: {items_url}")
+                                else:
+                                    # Pentru alte tipuri, folosește comportamentul standard
+                                    items_url = f"{jellyfin_url}/Items?ParentId={library_id}&Recursive=true&Limit=0"
+                                    log.info(f"Bibliotecă standard: {items_url}")
                                 
                                 async with session.get(items_url, headers=headers) as items_response:
                                     log.info(f"Status răspuns items: {items_response.status}")
@@ -207,23 +222,8 @@ class JellyfinLibraryStats(commands.Cog):
                                         log.info(f"Total înregistrări în {library_name}: {total_records}")
                                         library_stats[library_name] = total_records
                                     else:
-                                        # Încearcă o altă abordare pentru biblioteci speciale sau playlists
-                                        if "playlist" in library_name.lower():
-                                            playlists_url = f"{jellyfin_url}/Playlists?SortBy=SortName&SortOrder=Ascending&Limit=0"
-                                            log.info(f"Încercare endpoint pentru playlists: {playlists_url}")
-                                            
-                                            async with session.get(playlists_url, headers=headers) as playlist_response:
-                                                if playlist_response.status == 200:
-                                                    playlist_data = await playlist_response.json()
-                                                    playlist_count = playlist_data.get('TotalRecordCount', 0)
-                                                    log.info(f"Total playlists: {playlist_count}")
-                                                    library_stats[library_name] = playlist_count
-                                                else:
-                                                    log.error(f"Eroare la accesarea playlist-urilor: {playlist_response.status}")
-                                                    library_stats[library_name] = 0
-                                        else:
-                                            log.error(f"Eroare la accesarea elementelor din biblioteca {library_name}: {items_response.status}")
-                                            library_stats[library_name] = 0
+                                        log.error(f"Eroare la accesarea elementelor din biblioteca {library_name}: {items_response.status}")
+                                        library_stats[library_name] = 0
                             except Exception as e:
                                 log.error(f"Excepție la obținerea numărului pentru biblioteca {library_name}: {e}")
                                 library_stats[library_name] = 0
@@ -298,15 +298,15 @@ class JellyfinLibraryStats(commands.Cog):
             return False
 
     async def background_update(self):
-        """Task de fundal pentru actualizare zilnică"""
+        """Task de fundal pentru actualizare săptămânală"""
         await self.bot.wait_until_ready()
 
         while not self.bot.is_closed():
             try:
-                # Actualizează o dată la 24 de ore
-                log.info("Pornire actualizare zilnică")
+                # Actualizează o dată la 7 zile (săptămânal)
+                log.info("Pornire actualizare săptămânală")
                 await self.update_stats()
-                await asyncio.sleep(86400)  # 24 de ore
+                await asyncio.sleep(604800)  # 7 zile (7 * 24 * 60 * 60 = 604800 secunde)
             except Exception as e:
                 log.error(f"Eroare în task-ul de fundal: {e}")
                 await asyncio.sleep(3600)  # Așteaptă o oră în caz de eroare
@@ -322,5 +322,5 @@ class JellyfinLibraryStats(commands.Cog):
         # Pornește actualizarea inițială
         await self.update_stats(force_update=True)
         
-        # Pornește task-ul de fundal pentru actualizări zilnice
+        # Pornește task-ul de fundal pentru actualizări săptămânale
         self.update_task = self.bot.loop.create_task(self.background_update())
