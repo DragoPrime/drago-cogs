@@ -56,7 +56,7 @@ class JellyfinLibraryStats(commands.Cog):
         await self.config.update_channel_id.set(channel.id)
         
         # Trimite mesajul inițial care va fi actualizat
-        message = await channel.send("Actualizare statistici biblioteci Jellyfin...")
+        message = await channel.send("Actualizare statistici biblioteci Freia...")
         await self.config.update_message_id.set(message.id)
 
         # Încearcă să testezi conexiunea
@@ -265,7 +265,7 @@ class JellyfinLibraryStats(commands.Cog):
                 
                 # Construiește mesajul cu statistici
                 embed = discord.Embed(
-                    title="📊 Statistici Biblioteci Jellyfin",
+                    title="📊 Statistici Biblioteci Freia",
                     description=f"Actualizat la: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
                     color=discord.Color.blue()
                 )
