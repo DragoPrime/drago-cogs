@@ -2,8 +2,8 @@
     "author": [
         "Drago Prime"
     ],
-    "install_msg": "This repo is for personal use, some cogs will be abandoned, some not. I don't provide support for any of them. Feel free to clone it and modify them as you like.",
-    "name": "DragoPrime",
-    "short": "Some cogs for Red Discord Bot",
-    "description": "Just some cogs that I made for my personal use."
+    "install_msg": "Cogs for personal use for Red Discord Bot made with Claude.AI. I don't offer support for them, clone them and modify as you like.",
+    "name": "Drago-Cogs",
+    "short": "Cogs by DragoPrime for Red-DiscordBot V3.",
+    "description": "Cogs by DragoPrime for Red-DiscordBot V3."
 }
