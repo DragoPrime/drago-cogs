@@ -241,61 +241,61 @@ class JellyfinLibraryStats(commands.Cog):
             log.error(f"Excepție generală la preluarea bibliotecilor: {e}")
             return None
 
-async def update_stats(self, force_update=False):
-    """Actualizează mesajul cu statisticile bibliotecilor"""
-    # Verifică dacă sunt configurate toate elementele necesare
-    jellyfin_url = await self.config.jellyfin_url()
-    channel_id = await self.config.update_channel_id()
-    message_id = await self.config.update_message_id()
-    
-    if not all([jellyfin_url, channel_id, message_id]):
-        log.error("Configurația nu este completă")
-        return False
-
-    try:
-        # Preia statisticile bibliotecilor
-        log.info("Începe actualizarea statisticilor")
-        library_stats = await self.fetch_jellyfin_libraries()
-
-        if library_stats:
-            channel = self.bot.get_channel(channel_id)
-            if not channel:
-                log.error(f"Canalul {channel_id} nu a fost găsit")
-                return False
-            
-            # Construiește mesajul cu statistici
-            embed = discord.Embed(
-                title="📊 Statistici Biblioteci Freia",
-                description=f"Actualizat la: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
-                color=discord.Color.blue()
-            )
-            
-            # Adaugă statistici pentru fiecare bibliotecă
-            for library_name, item_count in library_stats.items():
-                embed.add_field(name=library_name, value=str(item_count), inline=False)
-
-            # Actualizează mesajul - specifică content="" pentru a șterge textul original
-            try:
-                message = await channel.fetch_message(message_id)
-                await message.edit(content="", embed=embed)
-                log.info("Mesajul a fost actualizat cu succes")
-            except discord.NotFound:
-                log.error(f"Mesajul {message_id} nu a fost găsit")
-                return False
-            except Exception as e:
-                log.error(f"Eroare la actualizarea mesajului: {e}")
-                return False
-
-            # Salvează ultima dată de actualizare
-            await self.config.last_update.set(datetime.now().isoformat())
-            return True
-        else:
-            log.error("Nu s-au putut prelua statisticile bibliotecilor")
+    async def update_stats(self, force_update=False):
+        """Actualizează mesajul cu statisticile bibliotecilor"""
+        # Verifică dacă sunt configurate toate elementele necesare
+        jellyfin_url = await self.config.jellyfin_url()
+        channel_id = await self.config.update_channel_id()
+        message_id = await self.config.update_message_id()
+        
+        if not all([jellyfin_url, channel_id, message_id]):
+            log.error("Configurația nu este completă")
             return False
 
-    except Exception as e:
-        log.error(f"Eroare generală la actualizarea statisticilor: {e}")
-        return False
+        try:
+            # Preia statisticile bibliotecilor
+            log.info("Începe actualizarea statisticilor")
+            library_stats = await self.fetch_jellyfin_libraries()
+
+            if library_stats:
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    log.error(f"Canalul {channel_id} nu a fost găsit")
+                    return False
+                
+                # Construiește mesajul cu statistici
+                embed = discord.Embed(
+                    title="📊 Statistici Biblioteci Freia",
+                    description=f"Actualizat la: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+                    color=discord.Color.blue()
+                )
+                
+                # Adaugă statistici pentru fiecare bibliotecă
+                for library_name, item_count in library_stats.items():
+                    embed.add_field(name=library_name, value=str(item_count), inline=False)
+
+                # Actualizează mesajul - specifică content="" pentru a șterge textul original
+                try:
+                    message = await channel.fetch_message(message_id)
+                    await message.edit(content="", embed=embed)
+                    log.info("Mesajul a fost actualizat cu succes")
+                except discord.NotFound:
+                    log.error(f"Mesajul {message_id} nu a fost găsit")
+                    return False
+                except Exception as e:
+                    log.error(f"Eroare la actualizarea mesajului: {e}")
+                    return False
+
+                # Salvează ultima dată de actualizare
+                await self.config.last_update.set(datetime.now().isoformat())
+                return True
+            else:
+                log.error("Nu s-au putut prelua statisticile bibliotecilor")
+                return False
+
+        except Exception as e:
+            log.error(f"Eroare generală la actualizarea statisticilor: {e}")
+            return False
 
     async def background_update(self):
         """Task de fundal pentru actualizare săptămânală"""
