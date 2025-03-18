@@ -16,6 +16,7 @@ Note:
 | Inara | <details><summary>Display the signature image from Inara</summary>Display the signature image from Inara</details>
 | Jellyfin Recommendation | <details><summary>Recommend a title from Jellyfin every Monday at 06:00 PM</summary>This cog is in romanian language and a custom command to recommend</details>
 | Calendar Sync | <details><summary>Syncs Discord scheduled events to a Google Calendar</summary>Syncs Discord scheduled events to a Google Calendar</details>
+| Jellyfin Library Stats | <details><summary>Updates library statistics on a Jellyfin server weekly</summary>This cog is in romanian language</details>
 
 ## BenchmarkLeaderboard
 
@@ -66,3 +67,7 @@ Note:
 **`[p]calendarset verify`** - Verify all settings are working
 
 **`[p]calendarset settings`** - Show current settings
+
+## Jellyfin Library Stats
+
+**`[p]jellyfinstats setup <jellyfin_url> <api_key> <channel>`** - Setup command
