@@ -1,0 +1,14 @@
+{
+    "name": "JellyfinNewContent",
+    "short": "Anunță filme și seriale noi adăugate pe serverul Jellyfin",
+    "description": "Un modul care verifică periodic serverul Jellyfin și anunță filmele și serialele nou adăugate într-un canal specificat.",
+    "end_user_data_statement": "Acest modul nu stochează date personale ale utilizatorilor.",
+    "author": ["Drago Prime"],
+    "required_cogs": {},
+    "requirements": ["aiohttp"],
+    "tags": ["jellyfin", "announcement", "media", "new content"],
+    "min_bot_version": "3.5.0",
+    "hidden": false,
+    "disabled": false,
+    "type": "COG"
+}
