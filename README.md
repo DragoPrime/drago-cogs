@@ -1,7 +1,8 @@
 # DragoCogs
 Cogs for personal use for Red Discord Bot made with Claude.AI
 
-[p]repo add drago-cogs https://github.com/DragoPrime/drago-cogs<br>
+[p]repo add drago-cogs https://github.com/DragoPrime/drago-cogs
+
 [p]cog install drago-cogs [cog]
 
 Note:
@@ -19,74 +20,5 @@ Note:
 | Jellyfin Library Stats | <details><summary>Updates library statistics on a Jellyfin server weekly</summary>This cog is in romanian language</details>
 | Jellyfin New Content | <details><summary>Monitors and announces new movies and TV shows added to a Jellyfin server</summary>This cog is in romanian language</details>
 
-## BenchmarkLeaderboard
-
-**`[p]benchmark add [type] [score]`** - Add a benchmark score
-
-**`[p]benchmark view [type]`** - View the top 10 scores for a specific benchmark
-
-**`[p]benchmark types`** - List all existing benchmark types
-
-**`[p]benchmark delete [type] [@Username]`** - Admin command, delete a specific user's score, delete an entire benchmark type
-
-## JellyfinSearch
-
-**`[p]setjellyfinurl https://your.jellyfin.server`** - Set Jellyfin server URL
-
-**`[p]setjellyfinapi your_api_key`** - Set API key
-
-**`[p]freia [movie or series title]`** - Search the libraries
-
-## Inara
-
-**`[p]inara [user ID]`** - Display sig image
-
-## Jellyfin Recommendation
-
-**`[p]recseturl https://your.jellyfin.server`** - Set Jellyfin server URL
-
-**`[p]recsetapi your_api_key`** - Set Jellyfin API key
-
-**`[p]recsettmdbapi TDB_api_key`** - Set TMDB API key (for thumbnail)
-
-**`[p]setrecommendationchannel [#channel]`** - Set channel for recommendations
-
-**`[p]showrecsettings`** - View current settings
-
-**`[p]recomanda`** - Manually trigger the recommendation
-
-## Calendar Sync
-
-**`[p]pipinstall google-api-python-client google-auth-httplib2 google-auth-oauthlib pytz google.api_core`** - Install dependencies
-
-**`[p]calendarset setcalendar <your_calendar_id>`** - Set Google Calendar ID
-
-**`[p]calendarset settimezone <your_timezone>`** - Set TimeZone
-
-**`[p]calendarset credentials`** - Upload your Google service account JSON file when prompted
-
-**`[p]calendarset verify`** - Verify all settings are working
-
-**`[p]calendarset settings`** - Show current settings
-
-## Jellyfin Library Stats
-
-**`[p]jellyfinstats setup <jellyfin_url> <api_key> <channel>`** - Setup command
-
-## Jellyfin New Content
-
-**`[p]newcontent seturl <URL>`** - Set your Jellyfin server URL
-
-**`[p]newcontent setapi <API_KEY>`** - Set your Jellyfin API key
-
-**`[p]newcontent settmdb <API_KEY>`** - (Optional) Set a TMDb API key for posters
-
-**`[p]newcontent setchannel <#CHANNEL>`** - Set the announcement channel
-
-**`[p]newcontent setinterval <HOURS>`** - Set how often to check (in hours)
-
-**`[p]newcontent settings`** - Display current configuration
-
-**`[p]newcontent check`** - Manually trigger a check for new content
-
-**`[p]newcontent reset`** - Reset the last check timestamp
+# How to use:
+Check the [wiki](https://github.com/DragoPrime/drago-cogs/wiki) for information on every cog and the commands they use.
