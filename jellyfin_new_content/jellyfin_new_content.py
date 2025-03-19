@@ -248,7 +248,7 @@ class JellyfinNewContent(commands.Cog):
                 pass
         
         # Send the announcement
-        await channel.send(f"**{media_type} nou adăugat pe Jellyfin:**", embed=embed)
+        await channel.send(f"**{media_type} nou adăugat pe Freia:**", embed=embed)
 
     @commands.group(name="newcontent")
     async def newcontent(self, ctx):
