@@ -17,6 +17,7 @@ Note:
 | Jellyfin Recommendation | <details><summary>Recommend a title from Jellyfin every Monday at 06:00 PM</summary>This cog is in romanian language and a custom command to recommend</details>
 | Calendar Sync | <details><summary>Syncs Discord scheduled events to a Google Calendar</summary>Syncs Discord scheduled events to a Google Calendar</details>
 | Jellyfin Library Stats | <details><summary>Updates library statistics on a Jellyfin server weekly</summary>This cog is in romanian language</details>
+| Jellyfin New Content | <details><summary>Monitors and announces new movies and TV shows added to a Jellyfin server</summary>This cog is in romanian language</details>
 
 ## BenchmarkLeaderboard
 
@@ -71,3 +72,21 @@ Note:
 ## Jellyfin Library Stats
 
 **`[p]jellyfinstats setup <jellyfin_url> <api_key> <channel>`** - Setup command
+
+## Jellyfin New Content
+
+**`[p]newcontent seturl <URL>`** - Set your Jellyfin server URL
+
+**`[p]newcontent setapi <API_KEY>`** - Set your Jellyfin API key
+
+**`[p]newcontent settmdb <API_KEY>`** - (Optional) Set a TMDb API key for posters
+
+**`[p]newcontent setchannel <#CHANNEL>`** - Set the announcement channel
+
+**`[p]newcontent setinterval <HOURS>`** - Set how often to check (in hours)
+
+**`[p]newcontent settings`** - Display current configuration
+
+**`[p]newcontent check`** - Manually trigger a check for new content
+
+**`[p]newcontent reset`** - Reset the last check timestamp
