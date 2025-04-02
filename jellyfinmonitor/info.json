@@ -1,0 +1,18 @@
+{
+    "author": ["Drago Prime"],
+    "description": "A Red Discord Bot cog that monitors Jellyfin users and notifies when they have been inactive for 30 and 60 days.",
+    "install_msg": "Thanks for installing the Jellyfin Monitor cog! Use `[p]help jellyfinmon` to get started.",
+    "short": "Monitor inactive Jellyfin users",
+    "name": "JellyfinMonitor",
+    "tags": [
+        "jellyfin",
+        "monitor",
+        "utility",
+        "admin"
+    ],
+    "requirements": [
+        "aiohttp"
+    ],
+    "min_bot_version": "3.5.0",
+    "end_user_data_statement": "This cog does not store end user data."
+}
