@@ -19,6 +19,7 @@ Note:
 | Calendar Sync | <details><summary>Syncs Discord scheduled events to a Google Calendar</summary>Syncs Discord scheduled events to a Google Calendar</details>
 | Jellyfin Library Stats | <details><summary>Updates library statistics on a Jellyfin server weekly</summary>This cog is in romanian language</details>
 | Jellyfin New Content | <details><summary>Monitors and announces new movies and TV shows added to a Jellyfin server</summary>This cog is in romanian language</details>
+| Jellyfin Monitor | <details><summary>Monitors Jellyfin users and notifies when they have been inactive for 30 and 60 days.</summary>Monitors Jellyfin users and notifies when they have been inactive for 30 and 60 days.</details>
 
 # How to use:
 Check the [wiki](https://github.com/DragoPrime/drago-cogs/wiki) for information on every cog and the commands they use.
