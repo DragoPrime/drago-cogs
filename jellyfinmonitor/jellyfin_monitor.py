@@ -197,7 +197,8 @@ class JellyfinMonitor(commands.Cog):
         config_data = await self.config.guild(guild).all()
         inactive_records = config_data["inactive_user_records"] or {}
         
-        now = datetime.datetime.now()
+        # Create timezone-aware now object
+        now = datetime.datetime.now(datetime.timezone.utc)
         thirty_days_ago = now - datetime.timedelta(days=30)
         sixty_days_ago = now - datetime.timedelta(days=60)
         
@@ -228,7 +229,10 @@ class JellyfinMonitor(commands.Cog):
                 if not last_activity_date:
                     # If no activity date, check if we've already recorded them
                     if user_id in inactive_records:
-                        first_noticed = datetime.datetime.fromtimestamp(inactive_records[user_id])
+                        # Convert timestamp to timezone-aware datetime
+                        first_noticed = datetime.datetime.fromtimestamp(
+                            inactive_records[user_id], tz=datetime.timezone.utc
+                        )
                         days_inactive = (now - first_noticed).days + 30  # Add 30 days since that's when we first noticed
                         
                         if days_inactive >= 60:
@@ -293,7 +297,7 @@ class JellyfinMonitor(commands.Cog):
         embed = discord.Embed(
             title="Jellyfin Inactive Users Report",
             color=discord.Color.gold(),
-            timestamp=datetime.datetime.now()
+            timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
         
         # Add 60+ days inactive users (more critical)
@@ -358,7 +362,7 @@ class JellyfinMonitor(commands.Cog):
                     last_check = config_data["last_check"]
                     interval_hours = config_data["check_interval_hours"]
                     
-                    now = datetime.datetime.now().timestamp()
+                    now = datetime.datetime.now(datetime.timezone.utc).timestamp()
                     if last_check and (now - last_check) < (interval_hours * 3600):
                         continue  # Not time to check yet
                     
@@ -377,8 +381,3 @@ class JellyfinMonitor(commands.Cog):
             
             # Sleep before next check
             await asyncio.sleep(3600)  # Check every hour if it's time to run
-
-# Această funcție este acum în __init__.py pentru a fi compatibilă cu Red v3.5
-# def setup(bot):
-#     """Add the cog to the bot."""
-#     bot.add_cog(JellyfinMonitor(bot))
