@@ -1,4 +1,4 @@
-from .freia import FreiaUsers
+from .freia import FreiaUsers, setup
 
-def setup(bot):
-    bot.add_cog(FreiaUsers(bot))
+# Redirectăm importul pentru compatibilitate
+# Când un pachet este încărcat, Red va folosi setup din __init__.py
