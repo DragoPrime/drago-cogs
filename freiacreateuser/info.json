@@ -1,0 +1,17 @@
+{
+    "author": [
+        "FreiaUsers"
+    ],
+    "description": "Cog pentru Red Discord Bot care permite crearea și administrarea utilizatorilor Jellyfin direct din Discord.",
+    "install_msg": "Mulțumesc pentru instalarea cog-ului FreiaUsers! Pentru a începe, folosește comanda `[p]freia setup <url> <api_key>` pentru a configura conexiunea cu serverul Jellyfin. Apoi folosește `[p]freia createuser <username>` pentru a crea utilizatori noi.",
+    "short": "Administrează utilizatori Jellyfin din Discord",
+    "tags": [
+        "jellyfin",
+        "media",
+        "server",
+        "users",
+        "management"
+    ],
+    "type": "COG",
+    "end_user_data_statement": "Acest cog nu stochează date personale despre utilizatori."
+}
