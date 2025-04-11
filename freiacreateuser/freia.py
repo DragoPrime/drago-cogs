@@ -25,20 +25,20 @@ class FreiaUsers(commands.Cog):
             "api_key": "",
             "default_policy": {
                 "IsAdministrator": False,
-                "IsHidden": False,
+                "IsHidden": True,
                 "IsDisabled": False,
                 "EnableRemoteControlOfOtherUsers": False,
                 "EnableSharedDeviceControl": False,
                 "EnableRemoteAccess": True,
                 "EnableLiveTvManagement": False,
-                "EnableLiveTvAccess": True,
+                "EnableLiveTvAccess": False,
                 "EnableMediaPlayback": True,
                 "EnableAudioPlaybackTranscoding": True,
                 "EnableVideoPlaybackTranscoding": True,
                 "EnablePlaybackRemuxing": True,
                 "EnableContentDeletion": False,
-                "EnableContentDownloading": True,
-                "EnableSubtitleDownloading": True,
+                "EnableContentDownloading": False,
+                "EnableSubtitleDownloading": False,
                 "EnableSubtitleManagement": False,
                 "EnableSyncTranscoding": True,
                 "EnableMediaConversion": False,
@@ -51,10 +51,10 @@ class FreiaUsers(commands.Cog):
                 "EnableAllChannels": True,
                 "EnabledFolders": [],
                 "EnableAllFolders": True,
-                "InvalidLoginAttemptCount": 0,
+                "InvalidLoginAttemptCount": 3,
                 "EnablePublicSharing": False,
                 "RemoteClientBitrateLimit": 0,
-                "SimultaneousStreamLimit": 3
+                "SimultaneousStreamLimit": 1
             }
         }
         
@@ -173,7 +173,7 @@ class FreiaUsers(commands.Cog):
                                 embed.add_field(name="📋 Utilizator", value=f"`{username}`", inline=True)
                                 embed.add_field(name="🔑 Parolă", value=f"`{password}`", inline=True)
                                 embed.add_field(name="🌐 Server", value=f"`{server_name}`", inline=False)
-                                embed.set_footer(text="Păstrează aceste credențiale într-un loc sigur!")
+                                embed.set_footer(text="Parola poate fi schimbată după ce te conectezi. păstrează aceste credențiale într-un loc sigur!")
                                 
                                 await ctx.send(embed=embed)
                             else:
