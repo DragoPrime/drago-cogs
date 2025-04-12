@@ -150,11 +150,11 @@ class FreiaUsers(commands.Cog):
                         # Debug: Afișează formatul politicii pentru a verifica
                         # await ctx.send(box(json.dumps(default_policy, indent=2)))
                         
-                        # Setează politica utilizatorului - metoda modificată pentru a rezolva problema
+                        # Setează politica utilizatorului - folosind PUT în loc de POST
                         policy_url = f"{jellyfin_url}/Users/{user_id}/Policy"
                         
-                        # Metoda 1: Folosește direct put în loc de post
-                        async with session.post(policy_url, headers=headers, json=default_policy) as policy_resp:
+                        # Folosește direct PUT care este metoda corectă pentru acest endpoint
+                        async with session.put(policy_url, headers=headers, json=default_policy) as policy_resp:
                             if policy_resp.status == 200 or policy_resp.status == 204:
                                 # Succes! Afișează credențialele
                                 # Extrage numele serverului Jellyfin (opțional)
@@ -181,34 +181,8 @@ class FreiaUsers(commands.Cog):
                                 
                                 await ctx.send(embed=embed)
                             else:
-                                # Alternativa: Dacă metoda POST nu funcționează, încearcă cu PUT
-                                async with session.put(policy_url, headers=headers, json=default_policy) as policy_resp2:
-                                    if policy_resp2.status == 200 or policy_resp2.status == 204:
-                                        # Succesul cu metoda alternativă
-                                        server_name = "Freia"
-                                        try:
-                                            async with session.get(f"{jellyfin_url}/System/Info", headers=headers) as server_info_resp:
-                                                if server_info_resp.status == 200:
-                                                    server_info = await server_info_resp.json()
-                                                    if "ServerName" in server_info:
-                                                        server_name = server_info["ServerName"]
-                                        except:
-                                            pass
-                                        
-                                        embed = discord.Embed(
-                                            title=f"✅ Cont creat pe serverul {server_name}",
-                                            description=f"Un nou cont a fost creat cu succes!",
-                                            color=discord.Color.green()
-                                        )
-                                        embed.add_field(name="📋 Utilizator", value=f"`{username}`", inline=True)
-                                        embed.add_field(name="🔑 Parolă", value=f"`{password}`", inline=True)
-                                        embed.add_field(name="🌐 Server", value=f"`{server_name}`", inline=False)
-                                        embed.set_footer(text="Păstrează aceste credențialele într-un loc sigur!")
-                                        
-                                        await ctx.send(embed=embed)
-                                    else:
-                                        error_text = await policy_resp2.text()
-                                        await ctx.send(f"⚠️ Utilizatorul a fost creat, dar setarea politicii a eșuat: {policy_resp2.status}\nEroare: {error_text}")
+                                error_text = await policy_resp.text()
+                                await ctx.send(f"⚠️ Utilizatorul a fost creat, dar setarea politicii a eșuat: {policy_resp.status}\nEroare: {error_text}")
                     else:
                         error_text = await resp.text()
                         await ctx.send(f"❌ Crearea utilizatorului a eșuat! Status: {resp.status}\nEroare: {error_text}")
@@ -342,11 +316,12 @@ class FreiaUsers(commands.Cog):
     @_freia.command(name="debug")
     @checks.admin_or_permissions(administrator=True)
     @commands.guild_only()
-    async def _debug_api(self, ctx: commands.Context, endpoint: str = "Users"):
+    async def _debug_api(self, ctx: commands.Context, endpoint: str = "Users", method: str = "GET"):
         """Comandă de debug pentru a verifica API-ul Jellyfin
         
         Arguments:
             endpoint -- Endpoint-ul API-ului pentru testare (implicit: Users)
+            method -- Metoda HTTP de folosit (GET, POST, PUT) - implicit: GET
         """
         jellyfin_url = await self.config.guild(ctx.guild).jellyfin_url()
         api_key = await self.config.guild(ctx.guild).api_key()
@@ -362,16 +337,39 @@ class FreiaUsers(commands.Cog):
                 }
                 
                 full_url = f"{jellyfin_url}/{endpoint}"
-                await ctx.send(f"🔍 Testez endpoint-ul: `{full_url}`")
+                await ctx.send(f"🔍 Testez endpoint-ul: `{full_url}` cu metoda `{method}`")
                 
-                async with session.get(full_url, headers=headers) as resp:
-                    status = resp.status
-                    try:
-                        data = await resp.json()
-                        await ctx.send(f"✅ Status: {status}\nRăspuns (primele 1900 caractere):\n{box(json.dumps(data, indent=2)[:1900], lang='json')}")
-                    except:
-                        text = await resp.text()
-                        await ctx.send(f"✅ Status: {status}\nRăspuns (primele 1900 caractere):\n{box(text[:1900])}")
+                if method.upper() == "GET":
+                    async with session.get(full_url, headers=headers) as resp:
+                        status = resp.status
+                        try:
+                            data = await resp.json()
+                            await ctx.send(f"✅ Status: {status}\nRăspuns (primele 1900 caractere):\n{box(json.dumps(data, indent=2)[:1900], lang='json')}")
+                        except:
+                            text = await resp.text()
+                            await ctx.send(f"✅ Status: {status}\nRăspuns (primele 1900 caractere):\n{box(text[:1900])}")
+                elif method.upper() == "POST":
+                    async with session.post(full_url, headers=headers, json={}) as resp:
+                        status = resp.status
+                        try:
+                            data = await resp.json()
+                            await ctx.send(f"✅ Status: {status}\nRăspuns (primele 1900 caractere):\n{box(json.dumps(data, indent=2)[:1900], lang='json')}")
+                        except:
+                            text = await resp.text()
+                            await ctx.send(f"✅ Status: {status}\nRăspuns (primele 1900 caractere):\n{box(text[:1900])}")
+                elif method.upper() == "PUT":
+                    # Pentru PUT, folosim politica implicită ca și corp al cererii
+                    default_policy = await self.config.guild(ctx.guild).default_policy()
+                    async with session.put(full_url, headers=headers, json=default_policy) as resp:
+                        status = resp.status
+                        try:
+                            data = await resp.json()
+                            await ctx.send(f"✅ Status: {status}\nRăspuns (primele 1900 caractere):\n{box(json.dumps(data, indent=2)[:1900], lang='json')}")
+                        except:
+                            text = await resp.text()
+                            await ctx.send(f"✅ Status: {status}\nRăspuns (primele 1900 caractere):\n{box(text[:1900])}")
+                else:
+                    await ctx.send(f"❌ Metodă necunoscută: {method}. Folosește GET, POST sau PUT.")
         except Exception as e:
             await ctx.send(f"❌ Eroare: {str(e)}")
 
