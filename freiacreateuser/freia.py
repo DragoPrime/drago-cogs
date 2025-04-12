@@ -307,3 +307,7 @@ class FreiaUsers(commands.Cog):
             policy_text += f"{key}: {value}\n"
         
         await ctx.send(box(policy_text, lang="yaml"))
+
+# Această funcție este cerută de Red pentru a încărca cogul
+async def setup(bot):
+    await bot.add_cog(FreiaUsers(bot))
