@@ -12,11 +12,9 @@ Note:
 # Cogs
 | Cog | Description |
 | --- | ----------- |
-| BenchmarkLeaderboard | <details><summary>Allows users to add, view, and manage benchmarking leaderboards</summary>Allows users to add, view, and manage benchmarking leaderboards</details>
 | JellyfinSearch | <details><summary>Lets you search your Jellyfin server</summary>This cog is in romanian language and a custom command to search</details>
 | Inara | <details><summary>Display the signature image from Inara</summary>Display the signature image from Inara</details>
 | Jellyfin Recommendation | <details><summary>Recommend a title from Jellyfin every Monday at 06:00 PM</summary>This cog is in romanian language and a custom command to recommend</details>
-| Calendar Sync | <details><summary>Syncs Discord scheduled events to a Google Calendar</summary>Syncs Discord scheduled events to a Google Calendar</details>
 | Jellyfin Library Stats | <details><summary>Updates library statistics on a Jellyfin server weekly</summary>This cog is in romanian language</details>
 | Jellyfin New Content | <details><summary>Monitors and announces new movies and TV shows added to a Jellyfin server</summary>This cog is in romanian language</details>
 | Jellyfin Monitor | <details><summary>Monitors Jellyfin users and notifies when they have been inactive for 30 and 60 days.</summary>Monitors Jellyfin users and notifies when they have been inactive for 30 and 60 days.</details>
