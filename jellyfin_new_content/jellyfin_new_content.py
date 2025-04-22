@@ -22,7 +22,8 @@ class JellyfinNewContent(commands.Cog):
             "announcement_channel_id": None,
             "tmdb_api_key": None,
             "check_interval": 6,  # Hours between checks
-            "last_check": None    # Timestamp of last check
+            "last_check": None,    # Timestamp of last check
+            "initialized": False   # Flag to mark if the plugin has been initialized
         }
         
         self.config.register_guild(**default_guild)
@@ -72,9 +73,10 @@ class JellyfinNewContent(commands.Cog):
         last_check = settings.get('last_check')
         now = datetime.utcnow().timestamp()
         
-        # If first time running, set last_check to now and return
-        if not last_check:
+        # If first time running or not initialized, set last_check to now and mark as initialized
+        if not last_check or not settings.get('initialized', False):
             await self.config.guild(guild).last_check.set(now)
+            await self.config.guild(guild).initialized.set(True)
             return
             
         # Find new content added since last check
@@ -123,7 +125,25 @@ class JellyfinNewContent(commands.Cog):
                         if response.status == 200:
                             data = await response.json()
                             items = data.get('Items', [])
-                            return items
+                            
+                            # Additional check to make sure items were added after last_check
+                            filtered_items = []
+                            for item in items:
+                                date_created = item.get('DateCreated')
+                                if date_created:
+                                    try:
+                                        # Parse the ISO date format from Jellyfin
+                                        item_date = datetime.fromisoformat(date_created.replace('Z', '+00:00'))
+                                        # Convert to timestamp for comparison
+                                        item_timestamp = item_date.timestamp()
+                                        if item_timestamp > last_check:
+                                            filtered_items.append(item)
+                                    except (ValueError, TypeError) as e:
+                                        print(f"Error parsing date: {e}")
+                                        # If we can't parse the date, include it anyway
+                                        filtered_items.append(item)
+                            
+                            return filtered_items
                         else:
                             print(f"Jellyfin API error: Status {response.status}")
             except Exception as e:
@@ -263,7 +283,8 @@ class JellyfinNewContent(commands.Cog):
                 f"`{ctx.prefix}newcontent setinterval <ORE>` - Setează intervalul de verificare (ore)\n"
                 f"`{ctx.prefix}newcontent settings` - Arată setările curente\n"
                 f"`{ctx.prefix}newcontent check` - Verifică manual conținut nou\n"
-                f"`{ctx.prefix}newcontent reset` - Resetează timestamp-ul de verificare"
+                f"`{ctx.prefix}newcontent reset` - Resetează timestamp-ul de verificare\n"
+                f"`{ctx.prefix}newcontent forceinit` - Forțează inițializarea fără a anunța conținutul existent"
             )
             await ctx.send(help_text)
 
@@ -356,6 +377,11 @@ class JellyfinNewContent(commands.Cog):
             value=last_check_str,
             inline=False
         )
+        embed.add_field(
+            name="Inițializat", 
+            value="Da ✓" if settings.get('initialized', False) else "Nu ✗",
+            inline=False
+        )
         
         await ctx.send(embed=embed)
 
@@ -386,7 +412,17 @@ class JellyfinNewContent(commands.Cog):
     async def reset_timestamp(self, ctx):
         """Reset the last check timestamp to force a fresh check"""
         await self.config.guild(ctx.guild).last_check.set(None)
+        await self.config.guild(ctx.guild).initialized.set(False)
         await ctx.send("Timestamp-ul de verificare a fost resetat. Următoarea verificare va include tot conținutul disponibil.")
+        
+    @newcontent.command(name="forceinit")
+    @commands.admin_or_permissions(administrator=True)
+    async def force_init(self, ctx):
+        """Force the plugin to initialize without announcing existing content"""
+        now = datetime.utcnow().timestamp()
+        await self.config.guild(ctx.guild).last_check.set(now)
+        await self.config.guild(ctx.guild).initialized.set(True)
+        await ctx.send("Plugin-ul a fost inițializat fără a anunța conținutul existent. Doar conținutul nou adăugat va fi anunțat de acum înainte.")
 
 async def setup(bot):
     await bot.add_cog(JellyfinNewContent(bot))
