@@ -67,7 +67,6 @@ class JellyfinNewContent(commands.Cog):
         settings = await self.config.guild(guild).all()
         channel = guild.get_channel(settings['announcement_channel_id'])
         if not channel:
-            print(f"Channel not found for guild {guild.id}")
             return
             
         # Calculate the time since last check
@@ -76,13 +75,10 @@ class JellyfinNewContent(commands.Cog):
         
         # If first time running or not initialized, set last_check to now and mark as initialized
         if not last_check or not settings.get('initialized', False):
-            print(f"First run for guild {guild.id}, initializing timestamp")
             await self.config.guild(guild).last_check.set(now)
             await self.config.guild(guild).initialized.set(True)
             return
             
-        print(f"Checking for new content since {datetime.fromtimestamp(last_check).strftime('%Y-%m-%d %H:%M:%S')}")
-        
         # Find new content added since last check
         new_items = await self.get_new_content(
             settings['base_url'], 
@@ -90,20 +86,15 @@ class JellyfinNewContent(commands.Cog):
             last_check
         )
         
-        print(f"Found {len(new_items)} new items to announce")
-        
         # Update last check time
         await self.config.guild(guild).last_check.set(now)
         
         if not new_items:
-            print("No new items to announce")
             return
             
         # Process and announce each new item
         for item in new_items:
             try:
-                name = item.get('Name', 'Unknown')
-                print(f"Announcing item: {name}")
                 await self.announce_item(channel, item, settings)
                 # Add a small delay between messages to avoid rate limits
                 await asyncio.sleep(1)
@@ -118,11 +109,10 @@ class JellyfinNewContent(commands.Cog):
         # Build search URL that excludes episodes
         search_url = (
             f"{base_url}/Items?IncludeItemTypes=Movie,Series&"
+            f"AddedDate={date_added}&"
             f"SortBy=DateCreated,SortName&SortOrder=Descending&"
             f"Recursive=true&api_key={api_key}"
         )
-        
-        print(f"Searching for content added since {date_added}")
         
         # Implement retry system
         max_retries = 3
@@ -135,38 +125,24 @@ class JellyfinNewContent(commands.Cog):
                         if response.status == 200:
                             data = await response.json()
                             items = data.get('Items', [])
-                            print(f"Found {len(items)} total items in Jellyfin")
                             
                             # Additional check to make sure items were added after last_check
                             filtered_items = []
                             for item in items:
-                                name = item.get('Name', 'Unknown')
                                 date_created = item.get('DateCreated')
-                                print(f"Checking item: {name}, DateCreated: {date_created}")
-                                
                                 if date_created:
                                     try:
                                         # Parse the ISO date format from Jellyfin
                                         item_date = datetime.fromisoformat(date_created.replace('Z', '+00:00'))
                                         # Convert to timestamp for comparison
                                         item_timestamp = item_date.timestamp()
-                                        print(f"Item timestamp: {item_timestamp}, Last check: {last_check}")
-                                        
-                                        # Include items added since last check
                                         if item_timestamp > last_check:
-                                            print(f"Adding {name} to announcement list")
                                             filtered_items.append(item)
-                                        else:
-                                            print(f"Skipping {name} (added before last check)")
                                     except (ValueError, TypeError) as e:
-                                        print(f"Error parsing date for {name}: {e}")
-                                        # If we can't parse the date, include it anyway for safety
+                                        print(f"Error parsing date: {e}")
+                                        # If we can't parse the date, include it anyway
                                         filtered_items.append(item)
-                                else:
-                                    print(f"No DateCreated for {name}, including it anyway")
-                                    filtered_items.append(item)
                             
-                            print(f"Filtered down to {len(filtered_items)} new items")
                             return filtered_items
                         else:
                             print(f"Jellyfin API error: Status {response.status}")
@@ -423,24 +399,9 @@ class JellyfinNewContent(commands.Cog):
                 f"Poți verifica setările curente folosind `{ctx.prefix}newcontent settings`"
             )
             return await ctx.send(help_msg)
-        
-        # Verify we're initialized
-        if not settings.get('initialized', False):
-            await ctx.send("⚠️ Plugin-ul nu este inițializat. Se inițializează acum...")
-            now = datetime.utcnow().timestamp()
-            await self.config.guild(ctx.guild).last_check.set(now)
-            await self.config.guild(ctx.guild).initialized.set(True)
-            await ctx.send("Plugin-ul a fost inițializat. Acum doar conținutul nou adăugat va fi anunțat.")
-            return
             
         await ctx.send("Verificare pentru conținut nou în desfășurare...")
         try:
-            # Show current timestamp for debugging
-            now = datetime.utcnow().timestamp()
-            last_check = settings.get('last_check')
-            last_check_str = datetime.fromtimestamp(last_check).strftime("%Y-%m-%d %H:%M:%S") if last_check else "necunoscut"
-            await ctx.send(f"Debug: Ultima verificare: {last_check_str}, Timestamp: {last_check}")
-            
             await self.check_and_announce_new_content(ctx.guild)
             await ctx.send("Verificare completă.")
         except Exception as e:
@@ -462,41 +423,3 @@ class JellyfinNewContent(commands.Cog):
         await self.config.guild(ctx.guild).last_check.set(now)
         await self.config.guild(ctx.guild).initialized.set(True)
         await ctx.send("Plugin-ul a fost inițializat fără a anunța conținutul existent. Doar conținutul nou adăugat va fi anunțat de acum înainte.")
-        
-    @newcontent.command(name="debugadd")
-    @commands.admin_or_permissions(administrator=True)
-    async def debug_add(self, ctx, title: str):
-        """Force announce a specific title for debugging"""
-        settings = await self.config.guild(ctx.guild).all()
-        channel = ctx.guild.get_channel(settings['announcement_channel_id'])
-        if not channel:
-            return await ctx.send("Canalul de anunțuri nu a fost configurat corect.")
-            
-        if not settings.get('base_url') or not settings.get('api_key'):
-            return await ctx.send("URL-ul și cheia API trebuie configurate înainte de a folosi această comandă.")
-            
-        await ctx.send(f"Căutare pentru titlul: {title}...")
-        
-        # Search for the title in Jellyfin
-        search_url = f"{settings['base_url']}/Items?searchTerm={title}&IncludeItemTypes=Movie,Series&Recursive=true&api_key={settings['api_key']}"
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(search_url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        items = data.get('Items', [])
-                        
-                        if not items:
-                            return await ctx.send(f"Nu s-a găsit niciun titlu care să conțină: {title}")
-                            
-                        # Use the first item found
-                        item = items[0]
-                        await ctx.send(f"S-a găsit: {item.get('Name')}. Se trimite anunțul...")
-                        
-                        await self.announce_item(channel, item, settings)
-                        await ctx.send("Anunț trimis cu succes!")
-                    else:
-                        await ctx.send(f"Eroare la căutarea în Jellyfin: Status {response.status}")
-        except Exception as e:
-            await ctx.send(f"Eroare: {str(e)}")
