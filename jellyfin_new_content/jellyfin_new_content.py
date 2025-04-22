@@ -423,6 +423,3 @@ class JellyfinNewContent(commands.Cog):
         await self.config.guild(ctx.guild).last_check.set(now)
         await self.config.guild(ctx.guild).initialized.set(True)
         await ctx.send("Plugin-ul a fost inițializat fără a anunța conținutul existent. Doar conținutul nou adăugat va fi anunțat de acum înainte.")
-
-async def setup(bot):
-    await bot.add_cog(JellyfinNewContent(bot))
