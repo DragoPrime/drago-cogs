@@ -335,7 +335,7 @@ class JellyfinSearch(commands.Cog):
                                 return await ctx.send("Nu s-au găsit rezultate. Atenție: căutarea se face după titlul de pe TMDB (cel în engleză, nu japoneză).")
                             
                             # Mesaj de așteptare pentru procesarea datelor TMDB
-                            wait_msg = await ctx.send("Se caută informații suplimentare de pe TMDB, vă rugăm să așteptați...")
+                            wait_msg = await ctx.send("Se caută în librăria Freia, vă rugăm să așteptați...")
                             
                             # Procesăm primele 10 rezultate pentru a obține informații TMDB
                             # Limitarea este necesară pentru a nu face prea multe cereri și a evita rate limiting
