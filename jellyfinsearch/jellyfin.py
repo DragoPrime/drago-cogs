@@ -4,6 +4,7 @@ import urllib.parse
 import discord
 from datetime import datetime
 from typing import List, Dict, Any
+import asyncio
 
 class JellyfinSearchView(discord.ui.View):
     """View for paginated Jellyfin search results"""
@@ -69,18 +70,32 @@ class JellyfinSearchView(discord.ui.View):
         if community_rating := item.get('CommunityRating'):
             embed.add_field(name="Rating", value=f"⭐ {community_rating:.1f}", inline=True)
 
+        # Descrierea este preluată din TMDB în funcție de ID-ul extern TMDB
+        # Aceasta va fi adăugată async în background - momentan afișăm descrierea din Jellyfin
         if overview := item.get('Overview'):
             # Limitează descrierea la 300 de caractere dacă e prea lungă
             if len(overview) > 300:
                 overview = overview[:297] + "..."
             embed.add_field(name="Descriere", value=overview, inline=False)
 
+        if item.get('TMDBOverview'):
+            # Dacă avem deja descriere TMDB din cache, o folosim pe aceasta
+            tmdb_overview = item.get('TMDBOverview')
+            if len(tmdb_overview) > 300:
+                tmdb_overview = tmdb_overview[:297] + "..."
+            embed.add_field(name="Descriere TMDB", value=tmdb_overview, inline=False)
+
         if genres := item.get('Genres'):
             embed.add_field(name="Genuri", value=", ".join(genres[:4]), inline=False)
             
-        # Adaugă imagine thumbnail dacă există
-        if item.get('Id'):
-            thumbnail_url = f"{self.cog.base_url}/Items/{item['Id']}/Images/Primary?maxHeight=200&maxWidth=133&quality=90&api_key={self.cog.api_key}"
+        # Adaugă imagine thumbnail
+        # Încercăm să utilizăm imaginea TMDB dacă este disponibilă
+        if item.get('TMDBPosterPath'):
+            thumbnail_url = f"https://image.tmdb.org/t/p/w342{item['TMDBPosterPath']}"
+            embed.set_thumbnail(url=thumbnail_url)
+        # Ca fallback, folosim imaginea din Jellyfin
+        elif item.get('Id'):
+            thumbnail_url = f"{self.cog.base_url}/Items/{item['Id']}/Images/Primary?maxHeight=400&maxWidth=266&quality=90&api_key={self.cog.api_key}"
             embed.set_thumbnail(url=thumbnail_url)
         
         # Adaugă link pentru vizualizare
@@ -149,16 +164,19 @@ class JellyfinSearch(commands.Cog):
         self.config = Config.get_conf(self, identifier=856712356)
         default_global = {
             "base_url": None,
-            "api_key": None
+            "api_key": None,
+            "tmdb_api_key": None
         }
         self.config.register_global(**default_global)
         self.base_url = None
         self.api_key = None
+        self.tmdb_api_key = None
     
     async def cog_load(self):
         """Load cached settings when cog loads"""
         self.base_url = await self.config.base_url()
         self.api_key = await self.config.api_key()
+        self.tmdb_api_key = await self.config.tmdb_api_key()
 
     async def get_base_url(self):
         """Get the stored base URL"""
@@ -167,6 +185,10 @@ class JellyfinSearch(commands.Cog):
     async def get_api_key(self):
         """Get the stored API key"""
         return self.api_key or await self.config.api_key()
+    
+    async def get_tmdb_api_key(self):
+        """Get the stored TMDB API key"""
+        return self.tmdb_api_key or await self.config.tmdb_api_key()
 
     @commands.command()
     @commands.is_owner()
@@ -186,6 +208,16 @@ class JellyfinSearch(commands.Cog):
         await ctx.send("Cheia API Jellyfin a fost setată.")
         # Delete the message containing the API key for security
         await ctx.message.delete()
+    
+    @commands.command()
+    @commands.is_owner()
+    async def freiatmdb(self, ctx, api_key: str):
+        """Set the TMDB API key"""
+        await self.config.tmdb_api_key.set(api_key)
+        self.tmdb_api_key = api_key
+        await ctx.send("Cheia API TMDB a fost setată.")
+        # Delete the message containing the API key for security
+        await ctx.message.delete()
 
     def format_runtime(self, runtime_ticks):
         """Convert runtime ticks to hours and minutes"""
@@ -197,40 +229,141 @@ class JellyfinSearch(commands.Cog):
         if hours > 0:
             return f"{hours}h {remaining_minutes}m"
         return f"{remaining_minutes}m"
+    
+    async def get_tmdb_info(self, item):
+        """Get additional information from TMDB API"""
+        if not self.tmdb_api_key:
+            return item
+        
+        # Determină tipul de media pentru URL-ul corect TMDB
+        media_type = "movie" if item.get('Type') == "Movie" else "tv"
+        
+        # Verificăm dacă avem un ID TMDB salvat din providerul extern
+        tmdb_id = None
+        if providers := item.get('ProviderIds', {}):
+            tmdb_id = providers.get('Tmdb')
+        
+        if not tmdb_id:
+            # Dacă nu avem TMDB ID, putem încerca o căutare după nume
+            name = item.get('Name')
+            year = item.get('ProductionYear', '')
+            
+            if not name:
+                return item
+                
+            search_query = f"{name}"
+            if year:
+                search_query += f" {year}"
+                
+            encoded_query = urllib.parse.quote(search_query)
+            search_url = f"https://api.themoviedb.org/3/search/{media_type}?api_key={self.tmdb_api_key}&query={encoded_query}&language=ro-RO"
+            
+            async with aiohttp.ClientSession() as session:
+                try:
+                    # TMDB API este cunoscut pentru viteza redusă - setăm un timeout mai mare
+                    async with session.get(search_url, timeout=10) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            results = data.get('results', [])
+                            
+                            if results:
+                                # Luăm primul rezultat care se potrivește cel mai bine
+                                tmdb_id = results[0].get('id')
+                                
+                                # Adăugăm și posterul dacă este disponibil
+                                if poster_path := results[0].get('poster_path'):
+                                    item['TMDBPosterPath'] = poster_path
+                                
+                                # Adăugăm și descrierea în română dacă este disponibilă
+                                if overview := results[0].get('overview'):
+                                    item['TMDBOverview'] = overview
+                        else:
+                            # Error handling - nu putem obține date TMDB
+                            pass
+                except Exception as e:
+                    # Error handling pentru cazul în care cererea eșuează
+                    pass
+        
+        # Dacă avem un ID TMDB, putem obține informații detaliate
+        if tmdb_id:
+            details_url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}?api_key={self.tmdb_api_key}&language=ro-RO"
+            
+            async with aiohttp.ClientSession() as session:
+                try:
+                    # TMDB API este cunoscut pentru viteza redusă - setăm un timeout mai mare
+                    async with session.get(details_url, timeout=10) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            
+                            # Adăugăm descrierea în română
+                            if overview := data.get('overview'):
+                                item['TMDBOverview'] = overview
+                            
+                            # Adăugăm posterul
+                            if poster_path := data.get('poster_path'):
+                                item['TMDBPosterPath'] = poster_path
+                except Exception as e:
+                    # Error handling pentru cazul în care cererea eșuează
+                    pass
+        
+        return item
 
     @commands.command(name="freia")
     async def freia(self, ctx, *, query: str):
         """Search for content on your Jellyfin server"""
         self.base_url = await self.get_base_url()
         self.api_key = await self.get_api_key()
+        self.tmdb_api_key = await self.get_tmdb_api_key()
         
         if not self.base_url or not self.api_key:
             return await ctx.send("Te rog să setezi mai întâi URL-ul și cheia API folosind `setjellyfinurl` și `setjellyfinapi`")
 
         encoded_query = urllib.parse.quote(query)
-                                # Utilizăm o limită de 50 de rezultate pentru paginare
+        # Utilizăm o limită de 50 de rezultate pentru paginare
         search_url = f"{self.base_url}/Items?searchTerm={encoded_query}&IncludeItemTypes=Movie,Series&Recursive=true&SearchType=String&IncludeMedia=true&IncludeOverview=true&Limit=50&api_key={self.api_key}"
 
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get(search_url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        items = data.get('Items', [])
-                        total_results = data.get('TotalRecordCount', 0)
+        async with ctx.typing():
+            async with aiohttp.ClientSession() as session:
+                try:
+                    async with session.get(search_url) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            items = data.get('Items', [])
+                            total_results = data.get('TotalRecordCount', 0)
 
-                        if not items:
-                            return await ctx.send("Nu s-au găsit rezultate. Atenție: căutarea se face după titlul de pe TMDB (cel în engleză, nu japoneză).")
-
-                        # Creăm view-ul pentru paginare
-                        view = JellyfinSearchView(self, ctx, items, query, total_results)
-                        # Trimitem primul embed cu view-ul atașat
-                        embed = view.get_current_page_embed()
-                        message = await ctx.send(embed=embed, view=view)
-                        # Stocăm mesajul pentru a putea face referință la el în timeout
-                        view.message = message
-                    else:
-                        error_text = await response.text()
-                        await ctx.send(f"Eroare: Nu s-a putut căuta pe serverul Jellyfin (Cod status: {response.status})\nDetalii eroare: {error_text}")
-            except Exception as e:
-                await ctx.send(f"Eroare la conectarea cu serverul Jellyfin: {str(e)}")
+                            if not items:
+                                return await ctx.send("Nu s-au găsit rezultate. Atenție: căutarea se face după titlul de pe TMDB (cel în engleză, nu japoneză).")
+                            
+                            # Mesaj de așteptare pentru procesarea datelor TMDB
+                            wait_msg = await ctx.send("Se caută informații suplimentare de pe TMDB, vă rugăm să așteptați...")
+                            
+                            # Procesăm primele 10 rezultate pentru a obține informații TMDB
+                            # Limitarea este necesară pentru a nu face prea multe cereri și a evita rate limiting
+                            enhanced_items = []
+                            for item in items[:10]:
+                                # Utilizăm get_tmdb_info pentru a îmbogăți datele
+                                enhanced_item = await self.get_tmdb_info(item)
+                                enhanced_items.append(enhanced_item)
+                                
+                                # Adăugăm un mic delay între cereri pentru a evita rate limiting la TMDB
+                                await asyncio.sleep(0.5)
+                            
+                            # Adăugăm și restul rezultatelor fără îmbogățire
+                            if len(items) > 10:
+                                enhanced_items.extend(items[10:])
+                            
+                            # Ștergem mesajul de așteptare
+                            await wait_msg.delete()
+                            
+                            # Creăm view-ul pentru paginare
+                            view = JellyfinSearchView(self, ctx, enhanced_items, query, total_results)
+                            # Trimitem primul embed cu view-ul atașat
+                            embed = view.get_current_page_embed()
+                            message = await ctx.send(embed=embed, view=view)
+                            # Stocăm mesajul pentru a putea face referință la el în timeout
+                            view.message = message
+                        else:
+                            error_text = await response.text()
+                            await ctx.send(f"Eroare: Nu s-a putut căuta pe serverul Jellyfin (Cod status: {response.status})\nDetalii eroare: {error_text}")
+                except Exception as e:
+                    await ctx.send(f"Eroare la conectarea cu serverul Jellyfin: {str(e)}")
