@@ -102,7 +102,7 @@ class JellyfinSearchView(discord.ui.View):
         item_id = item.get('Id')
         if item_id:
             web_url = f"{self.cog.base_url}/web/index.html#!/details?id={item_id}"
-            embed.add_field(name="Link", value=f"[Vezi pe Freia]({web_url})", inline=False)
+            embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
         
         # Adaugă footer cu informații despre paginare
         embed.set_footer(text=f"Pagina {self.current_page + 1}/{self.total_pages} • S-au găsit {self.total_results} rezultate în total")
@@ -138,7 +138,7 @@ class JellyfinSearchView(discord.ui.View):
         web_url = f"{self.cog.base_url}/web/index.html#!/details?id={item_id}"
         
         await interaction.response.send_message(
-            f"**{item_name}**\nPoți accesa direct acest titlu în Jellyfin folosind link-ul: {web_url}", 
+            f"**{item_name}**\nPoți accesa direct acest titlu din Freia folosind link-ul: {web_url}", 
             ephemeral=True
         )
     
