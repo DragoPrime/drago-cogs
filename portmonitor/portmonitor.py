@@ -45,17 +45,12 @@ class PortMonitor(commands.Cog):
             True dacă portul este accesibil, False altfel
         """
         try:
-            # Creează o conexiune socket
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(timeout)
-            
-            # Încearcă să se conecteze
-            result = sock.connect_ex((ip, port))
-            sock.close()
-            
-            # Dacă result este 0, conexiunea a reușit
-            return result == 0
-            
+            # Folosește asyncio pentru a crea o conexiune non-blocking
+            future = asyncio.open_connection(ip, port)
+            reader, writer = await asyncio.wait_for(future, timeout=timeout)
+            writer.close()
+            await writer.wait_closed()
+            return True
         except Exception:
             return False
 
@@ -74,7 +69,7 @@ class PortMonitor(commands.Cog):
                     last_status = monitor_data.get("last_status", True)
                     
                     # Verifică statusul portului
-                    current_status = await asyncio.to_thread(self.check_port, ip, port)
+                    current_status = await self.check_port(ip, port)
                     
                     # Dacă statusul s-a schimbat de la accesibil la inaccesibil
                     if last_status and not current_status:
@@ -151,7 +146,7 @@ class PortMonitor(commands.Cog):
             channel = ctx.channel
         
         # Verifică dacă IP-ul este valid făcând un test
-        is_accessible = await asyncio.to_thread(self.check_port, ip, port)
+        is_accessible = await self.check_port(ip, port)
         
         # Generează un ID unic pentru monitor
         monitor_id = f"{ip}:{port}"
@@ -248,7 +243,7 @@ class PortMonitor(commands.Cog):
         
         await ctx.send(f"🔍 Testez conexiunea la **{ip}:{port}**...")
         
-        is_accessible = await asyncio.to_thread(self.check_port, ip, port)
+        is_accessible = await self.check_port(ip, port)
         
         if is_accessible:
             embed = discord.Embed(
