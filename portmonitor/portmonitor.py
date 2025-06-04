@@ -4,7 +4,8 @@ from datetime import datetime
 from typing import Optional
 
 import discord
-from redbot.core import commands, Config, tasks
+from discord.ext import tasks
+from redbot.core import commands, Config
 from redbot.core.bot import Red
 
 
