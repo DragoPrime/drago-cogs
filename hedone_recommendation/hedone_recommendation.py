@@ -12,7 +12,7 @@ class HedoneRecommendation(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(
             self,
-            identifier=985167321,  # Identificator unic pentru acest cog
+            identifier=983947321,  # Identificator unic pentru acest cog
             force_registration=True
         )
         
@@ -175,7 +175,7 @@ class HedoneRecommendation(commands.Cog):
             embed.add_field(name="Vizionare Online:", value=f"[Hedone [SERVER 3]]({web_url})", inline=False)
         
         # Adăugare text informativ despre comanda manuală
-        embed.add_field(name="Caută mai multe recomandări:", value="Folosește comanda `.recomandah` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
+        embed.add_field(name="Caută mai multe recomandări:", value="Folosește comanda `.recomanda hedone` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
 
         channel = guild.get_channel(settings['channel_id'])
         if channel:
@@ -272,8 +272,15 @@ class HedoneRecommendation(commands.Cog):
         
         return None
 
-    @commands.command(name="recomandah")
-    async def recomandah(self, ctx):
+    @commands.command(name="recomanda")
+    async def recomanda(self, ctx, *, target: str = None):
+        """Generează manual o recomandare aleatorie de film sau serial"""
+        if target is None or target.lower() != "hedone":
+            return await ctx.send("Folosește comanda: `.recomanda hedone`")
+        
+        await self._generate_recommendation(ctx)
+    
+    async def _generate_recommendation(self, ctx):
         """Generează manual o recomandare aleatorie de film sau serial"""
         settings = await self.config.guild(ctx.guild).all()
         if not all(k in settings and settings[k] for k in ['base_url', 'api_key']):
@@ -346,7 +353,7 @@ class HedoneRecommendation(commands.Cog):
                 embed.add_field(name="Vizionare Online:", value=f"[Hedone [SERVER 3]]({web_url})", inline=False)
                 
             # Adăugare text informativ despre comanda manuală
-            embed.add_field(name="Caută mai multe recomandări:", value="Folosește comanda `.recomandah` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
+            embed.add_field(name="Caută mai multe recomandări:", value="Folosește comanda `.recomanda hedone` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
 
             # Ștergem mesajul de așteptare
             await waiting_msg.delete()
