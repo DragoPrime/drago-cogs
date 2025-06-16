@@ -5,14 +5,14 @@ import random
 import discord
 from datetime import datetime, timedelta
 
-class JellyfinRecommendation(commands.Cog):
+class HedoneRecommendation(commands.Cog):
     """Provide random Jellyfin recommendations every Monday"""
 
     def __init__(self, bot):
         self.bot = bot
         self.config = Config.get_conf(
             self,
-            identifier=987497321,  # Identificator unic pentru acest cog
+            identifier=985167321,  # Identificator unic pentru acest cog
             force_registration=True
         )
         
