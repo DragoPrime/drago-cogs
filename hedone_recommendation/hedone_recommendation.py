@@ -172,7 +172,7 @@ class HedoneRecommendation(commands.Cog):
         item_id = item.get('Id')
         if item_id:
             web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
-            embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
+            embed.add_field(name="Vizionare Online:", value=f"[Hedone [SERVER 3]]({web_url})", inline=False)
         
         # Adăugare text informativ despre comanda manuală
         embed.add_field(name="Caută mai multe recomandări:", value="Folosește comanda `.recomandah` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
@@ -180,7 +180,7 @@ class HedoneRecommendation(commands.Cog):
         channel = guild.get_channel(settings['channel_id'])
         if channel:
             # Adăugare text "Recomandarea Săptămânii:" înainte de embed
-            await channel.send("**Recomandarea Domnișoarei Freia de săptămâna aceasta:**", embed=embed)
+            await channel.send("**Recomandarea Domnișoarei Hedone de săptămâna aceasta:**", embed=embed)
 
     @commands.command()
     @commands.admin_or_permissions(administrator=True)
@@ -343,7 +343,7 @@ class HedoneRecommendation(commands.Cog):
             item_id = item.get('Id')
             if item_id:
                 web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
-                embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
+                embed.add_field(name="Vizionare Online:", value=f"[Hedone [SERVER 3]]({web_url})", inline=False)
                 
             # Adăugare text informativ despre comanda manuală
             embed.add_field(name="Caută mai multe recomandări:", value="Folosește comanda `.recomandah` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
