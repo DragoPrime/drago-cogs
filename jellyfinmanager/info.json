@@ -1,0 +1,14 @@
+{
+    "name": "JellyfinManager",
+    "short": "Gestionează utilizatori pe servere Jellyfin multiple",
+    "description": "Un cog pentru Red Discord Bot care permite gestionarea utilizatorilor pe multiple servere Jellyfin prin comenzi Discord. Administratorii pot configura servere Jellyfin, iar utilizatorii pot crea conturi prin comenzi simple.",
+    "end_user_data_statement": "Acest cog stochează configurația serverelor Jellyfin (URL-uri, credențiale admin) și setările per-guild. Nu stochează date personale ale utilizatorilor finali.",
+    "install_msg": "Mulțumesc pentru instalarea JellyfinManager! Folosește `.server addserver` pentru a configura serverele Jellyfin și `.server enable` pentru a activa comenzile pe serverul Discord.",
+    "author": ["RedBotUser"],
+    "required_python": "3.8.1",
+    "min_bot_version": "3.5.0",
+    "dependencies": ["aiohttp"],
+    "requirements": ["aiohttp>=3.7.0"],
+    "tags": ["jellyfin", "media", "server", "user management", "streaming"],
+    "type": "COG"
+}
