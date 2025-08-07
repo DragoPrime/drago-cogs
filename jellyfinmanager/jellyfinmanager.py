@@ -18,7 +18,7 @@ class JellyfinCog(commands.Cog):
     
     def __init__(self, bot: Red):
         self.bot = bot
-        self.config = Config.get_conf(self, identifier=1234567890)
+        self.config = Config.get_conf(self, identifier=1245567290)
         
         default_global = {
             "servers": {},
