@@ -2,8 +2,8 @@ import asyncio
 import aiohttp
 import json
 import logging
-from typing import Dict, Any, Optional, Union
-from datetime import datetime
+from typing import Dict, Any, Optional, Union, List
+from datetime import datetime, timedelta
 
 import discord
 from redbot.core import commands, Config, checks
@@ -18,21 +18,49 @@ class JellyfinCog(commands.Cog):
     
     def __init__(self, bot: Red):
         self.bot = bot
-        self.config = Config.get_conf(self, identifier=1237567650)
+        self.config = Config.get_conf(self, identifier=1234567890)
         
         default_global = {
             "servers": {},
-            "users": {}  # Format: {"discord_user_id": {"server_name": {"jellyfin_username": "data", "created_at": "timestamp"}}}
+            "users": {}  # Format: {"discord_user_id": {"server_name": {"jellyfin_username": {"data": "...", "created_at": "timestamp", "jellyfin_id": "id", "status": "active"}}}}
         }
         
         default_guild = {
             "enabled": False,
-            "server_roles": {}  # Format: {"server_name": role_id}
+            "server_roles": {},  # Format: {"server_name": role_id}
+            "notification_channel": None,  # Channel pentru notificări automatice
+            "auto_cleanup_enabled": True   # Activează/dezactivează cleanup-ul automat
         }
         
         self.config.register_global(**default_global)
         self.config.register_guild(**default_guild)
         
+        # Task pentru verificarea zilnică
+        self.cleanup_task = None
+        self.bot.loop.create_task(self._start_cleanup_task())
+        
+    def cog_unload(self):
+        """Oprește task-ul când cog-ul este descărcat"""
+        if self.cleanup_task:
+            self.cleanup_task.cancel()
+    
+    async def _start_cleanup_task(self):
+        """Pornește task-ul de cleanup zilnic"""
+        await self.bot.wait_until_ready()
+        self.cleanup_task = self.bot.loop.create_task(self._daily_cleanup_loop())
+    
+    async def _daily_cleanup_loop(self):
+        """Loop principal pentru verificarea zilnică"""
+        while True:
+            try:
+                await asyncio.sleep(24 * 60 * 60)  # Așteaptă 24 de ore
+                await self._check_inactive_users()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.error(f"Eroare în daily cleanup loop: {e}")
+                await asyncio.sleep(60 * 60)  # Încearcă din nou în 1 oră
+    
     async def _get_jellyfin_auth_token(self, server_url: str, username: str, password: str) -> Optional[str]:
         """Obține token-ul de autentificare pentru serverul Jellyfin"""
         auth_url = f"{server_url}/Users/AuthenticateByName"
@@ -60,6 +88,200 @@ class JellyfinCog(commands.Cog):
         except Exception as e:
             log.error(f"Eroare la autentificare {server_url}: {e}")
             return None
+    
+    async def _get_user_last_activity(self, server_url: str, token: str, user_id: str) -> Optional[datetime]:
+        """Obține ultima activitate a unui utilizator"""
+        activity_url = f"{server_url}/Users/{user_id}/Items/Latest"
+        
+        headers = {
+            "X-MediaBrowser-Token": token
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(activity_url, headers=headers, timeout=10) as resp:
+                    if resp.status == 200:
+                        # Obține informații despre utilizator pentru LastActivityDate
+                        user_url = f"{server_url}/Users/{user_id}"
+                        async with session.get(user_url, headers=headers, timeout=10) as user_resp:
+                            if user_resp.status == 200:
+                                user_data = await user_resp.json()
+                                last_activity_str = user_data.get("LastActivityDate")
+                                if last_activity_str:
+                                    return datetime.fromisoformat(last_activity_str.replace("Z", "+00:00"))
+                    return None
+        except Exception as e:
+            log.error(f"Eroare la obținerea ultimei activități: {e}")
+            return None
+    
+    async def _disable_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
+        """Dezactivează un utilizator Jellyfin"""
+        disable_url = f"{server_url}/Users/{user_id}/Policy"
+        
+        # Obține politica actuală
+        headers = {"X-MediaBrowser-Token": token}
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(disable_url, headers=headers, timeout=10) as resp:
+                    if resp.status == 200:
+                        policy = await resp.json()
+                        policy["IsDisabled"] = True
+                        
+                        # Actualizează politica
+                        async with session.post(disable_url, json=policy, headers=headers, timeout=10) as update_resp:
+                            return update_resp.status == 204
+        except Exception as e:
+            log.error(f"Eroare la dezactivarea utilizatorului: {e}")
+        
+        return False
+    
+    async def _delete_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
+        """Șterge un utilizator Jellyfin"""
+        delete_url = f"{server_url}/Users/{user_id}"
+        
+        headers = {"X-MediaBrowser-Token": token}
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.delete(delete_url, headers=headers, timeout=10) as resp:
+                    return resp.status == 204
+        except Exception as e:
+            log.error(f"Eroare la ștergerea utilizatorului: {e}")
+        
+        return False
+    
+    async def _check_inactive_users(self):
+        """Verifică utilizatorii inactivi și îi gestionează"""
+        servers = await self.config.servers()
+        users = await self.config.users()
+        
+        now = datetime.now()
+        thirty_days_ago = now - timedelta(days=30)
+        sixty_days_ago = now - timedelta(days=60)
+        
+        for discord_user_id, user_servers in users.items():
+            for server_name, server_users in user_servers.items():
+                if server_name not in servers:
+                    continue
+                
+                server_config = servers[server_name]
+                token = await self._get_jellyfin_auth_token(
+                    server_config["url"],
+                    server_config["admin_user"],
+                    server_config["admin_password"]
+                )
+                
+                if not token:
+                    continue
+                
+                for jellyfin_username, user_data in server_users.items():
+                    jellyfin_id = user_data.get("jellyfin_id")
+                    current_status = user_data.get("status", "active")
+                    
+                    if not jellyfin_id:
+                        continue
+                    
+                    # Obține ultima activitate
+                    last_activity = await self._get_user_last_activity(
+                        server_config["url"], token, jellyfin_id
+                    )
+                    
+                    if not last_activity:
+                        # Dacă nu putem obține activitatea, folosim data creării
+                        created_at = datetime.fromisoformat(user_data["created_at"])
+                        last_activity = created_at
+                    
+                    # Verifică dacă trebuie șters (60+ zile)
+                    if last_activity <= sixty_days_ago and current_status != "deleted":
+                        success = await self._delete_jellyfin_user(
+                            server_config["url"], token, jellyfin_id
+                        )
+                        
+                        if success:
+                            # Actualizează statusul
+                            user_data["status"] = "deleted"
+                            await self.config.users.set(users)
+                            
+                            # Trimite notificare
+                            await self._send_cleanup_notification(
+                                server_name, jellyfin_username, discord_user_id, "deleted", last_activity
+                            )
+                    
+                    # Verifică dacă trebuie dezactivat (30+ zile)
+                    elif last_activity <= thirty_days_ago and current_status == "active":
+                        success = await self._disable_jellyfin_user(
+                            server_config["url"], token, jellyfin_id
+                        )
+                        
+                        if success:
+                            # Actualizează statusul
+                            user_data["status"] = "disabled"
+                            await self.config.users.set(users)
+                            
+                            # Trimite notificare
+                            await self._send_cleanup_notification(
+                                server_name, jellyfin_username, discord_user_id, "disabled", last_activity
+                            )
+    
+    async def _send_cleanup_notification(self, server_name: str, jellyfin_username: str, discord_user_id: int, action: str, last_activity: datetime):
+        """Trimite notificare despre acțiunea de cleanup"""
+        # Caută toate guild-urile unde este configurat acest server
+        all_guilds = await self.config.all_guilds()
+        
+        for guild_id, guild_config in all_guilds.items():
+            if not guild_config.get("auto_cleanup_enabled", True):
+                continue
+                
+            notification_channel_id = guild_config.get("notification_channel")
+            if not notification_channel_id:
+                continue
+            
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                continue
+            
+            channel = guild.get_channel(notification_channel_id)
+            if not channel:
+                continue
+            
+            # Obține informații despre utilizatorul Discord
+            try:
+                discord_user = await self.bot.fetch_user(discord_user_id)
+                discord_user_name = str(discord_user)
+            except:
+                discord_user_name = f"Utilizator necunoscut (ID: {discord_user_id})"
+            
+            # Creează embed-ul de notificare
+            color = 0xffa500 if action == "disabled" else 0xff0000  # Orange pentru disabled, roșu pentru deleted
+            action_text = "dezactivat" if action == "disabled" else "șters"
+            icon = "⚠️" if action == "disabled" else "🗑️"
+            
+            embed = discord.Embed(
+                title=f"{icon} Utilizator {action_text}",
+                color=color,
+                timestamp=datetime.now()
+            )
+            
+            embed.add_field(name="👤 Utilizator Discord", value=discord_user_name, inline=True)
+            embed.add_field(name="🎬 Utilizator Jellyfin", value=jellyfin_username, inline=True)
+            embed.add_field(name="🖥️ Server", value=server_name, inline=True)
+            embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
+            
+            days_inactive = (datetime.now() - last_activity).days
+            embed.add_field(name="⏰ Zile inactive", value=str(days_inactive), inline=True)
+            
+            if action == "disabled":
+                embed.add_field(name="ℹ️ Notă", value="Utilizatorul va fi șters în 30 de zile dacă rămâne inactiv", inline=False)
+            
+            embed.set_footer(text="Cleanup automat Jellyfin")
+            
+            try:
+                await channel.send(embed=embed)
+            except discord.Forbidden:
+                log.error(f"Nu am permisiuni să trimit mesaj în canalul {channel.id}")
+            except Exception as e:
+                log.error(f"Eroare la trimiterea notificării: {e}")
     
     async def _create_jellyfin_user(self, server_url: str, token: str, username: str, password: str) -> Dict[str, Any]:
         """Creează un utilizator pe serverul Jellyfin"""
@@ -117,7 +339,7 @@ class JellyfinCog(commands.Cog):
         except Exception as e:
             return {"success": False, "error": str(e)}
     
-    async def _add_user_to_tracking(self, discord_user_id: int, server_name: str, jellyfin_username: str):
+    async def _add_user_to_tracking(self, discord_user_id: int, server_name: str, jellyfin_username: str, jellyfin_id: str):
         """Adaugă utilizatorul la sistemul de tracking"""
         users = await self.config.users()
         user_id_str = str(discord_user_id)
@@ -130,7 +352,9 @@ class JellyfinCog(commands.Cog):
         
         users[user_id_str][server_name][jellyfin_username] = {
             "created_at": datetime.now().isoformat(),
-            "server_name": server_name
+            "server_name": server_name,
+            "jellyfin_id": jellyfin_id,
+            "status": "active"
         }
         
         await self.config.users.set(users)
@@ -142,11 +366,14 @@ class JellyfinCog(commands.Cog):
         for discord_user_id, user_data in users.items():
             for server_name, server_users in user_data.items():
                 if jellyfin_username in server_users:
+                    user_info = server_users[jellyfin_username]
                     return {
                         "discord_user_id": int(discord_user_id),
                         "server_name": server_name,
                         "jellyfin_username": jellyfin_username,
-                        "created_at": server_users[jellyfin_username]["created_at"]
+                        "created_at": user_info["created_at"],
+                        "jellyfin_id": user_info.get("jellyfin_id"),
+                        "status": user_info.get("status", "active")
                     }
         return None
     
@@ -213,6 +440,39 @@ class JellyfinCog(commands.Cog):
         
         await ctx.send(success_msg)
     
+    @server.command(name="setchannel")
+    @checks.admin_or_permissions(manage_channels=True)
+    async def set_notification_channel(self, ctx, channel: discord.TextChannel):
+        """Setează canalul pentru notificări de cleanup automat"""
+        await self.config.guild(ctx.guild).notification_channel.set(channel.id)
+        await ctx.send(f"✅ Canalul pentru notificări a fost setat la {channel.mention}")
+    
+    @server.command(name="removechannel")
+    @checks.admin_or_permissions(manage_channels=True)
+    async def remove_notification_channel(self, ctx):
+        """Elimină canalul pentru notificări"""
+        await self.config.guild(ctx.guild).notification_channel.set(None)
+        await ctx.send("✅ Canalul pentru notificări a fost eliminat")
+    
+    @server.command(name="togglecleanup")
+    @checks.admin_or_permissions(manage_guild=True)
+    async def toggle_cleanup(self, ctx):
+        """Activează/dezactivează cleanup-ul automat pe acest server"""
+        current = await self.config.guild(ctx.guild).auto_cleanup_enabled()
+        new_status = not current
+        await self.config.guild(ctx.guild).auto_cleanup_enabled.set(new_status)
+        
+        status_text = "activat" if new_status else "dezactivat"
+        await ctx.send(f"✅ Cleanup-ul automat a fost {status_text}")
+    
+    @server.command(name="checkcleanup")
+    @checks.is_owner()
+    async def manual_cleanup_check(self, ctx):
+        """Execută manual verificarea pentru cleanup (doar pentru testare)"""
+        await ctx.send("🔄 Încep verificarea manuală a utilizatorilor inactivi...")
+        await self._check_inactive_users()
+        await ctx.send("✅ Verificarea a fost completată!")
+    
     @server.command(name="removeserver")
     @checks.is_owner()
     async def remove_server(self, ctx, nume_server: str):
@@ -255,7 +515,23 @@ class JellyfinCog(commands.Cog):
             
             server_list.append(f"**{name}**: {config['url']}{role_info}")
         
-        await ctx.send("**Servere Jellyfin configurate:**\n" + "\n".join(server_list))
+        # Informații despre cleanup
+        notification_channel_id = await self.config.guild(ctx.guild).notification_channel()
+        cleanup_enabled = await self.config.guild(ctx.guild).auto_cleanup_enabled()
+        
+        embed = discord.Embed(title="🖥️ Servere Jellyfin configurate", color=0x3498db)
+        embed.description = "\n".join(server_list)
+        
+        cleanup_info = f"**Cleanup automat:** {'✅ Activat' if cleanup_enabled else '❌ Dezactivat'}\n"
+        if notification_channel_id:
+            channel = ctx.guild.get_channel(notification_channel_id)
+            cleanup_info += f"**Canal notificări:** {channel.mention if channel else 'Canal șters'}"
+        else:
+            cleanup_info += "**Canal notificări:** Nu este setat"
+        
+        embed.add_field(name="⚙️ Configurația Cleanup", value=cleanup_info, inline=False)
+        
+        await ctx.send(embed=embed)
     
     @server.command(name="setrole")
     @checks.admin_or_permissions(manage_roles=True)
@@ -350,7 +626,7 @@ class JellyfinCog(commands.Cog):
         
         if result["success"]:
             # Adaugă la tracking
-            await self._add_user_to_tracking(ctx.author.id, nume_server, nume_utilizator)
+            await self._add_user_to_tracking(ctx.author.id, nume_server, nume_utilizator, result["user_id"])
             
             # Încearcă să atribuie rolul
             role_assigned = await self._assign_role(ctx.guild, ctx.author, nume_server)
@@ -363,11 +639,14 @@ class JellyfinCog(commands.Cog):
             embed.add_field(name="Server URL", value=server_config["url"], inline=False)
             embed.add_field(name="Nume utilizator", value=nume_utilizator, inline=True)
             embed.add_field(name="Utilizator Discord", value=ctx.author.mention, inline=True)
+            embed.add_field(name="Status", value="🟢 Activ", inline=True)
             
             if role_assigned:
                 embed.add_field(name="Rol atribuit", value="✅ Da", inline=True)
             else:
                 embed.add_field(name="Rol atribuit", value="❌ Nu (verifică configurația)", inline=True)
+            
+            embed.add_field(name="ℹ️ Notă", value="Utilizatorul va fi dezactivat după 30 de zile de inactivitate și șters după 60 de zile", inline=False)
             
             # Trimite mesajul în DM pentru securitate
             try:
@@ -408,20 +687,43 @@ class JellyfinCog(commands.Cog):
             )
             
             total_users = 0
+            active_users = 0
+            disabled_users = 0
+            deleted_users = 0
+            
             for server_name, server_users in users_data[user_id_str].items():
                 if server_name in servers_data:
                     server_url = servers_data[server_name]["url"]
-                    usernames = list(server_users.keys())
-                    total_users += len(usernames)
                     
-                    users_list = "\n".join([f"• {username}" for username in usernames])
+                    users_list = []
+                    for username, user_info in server_users.items():
+                        status = user_info.get("status", "active")
+                        if status == "active":
+                            status_icon = "🟢"
+                            active_users += 1
+                        elif status == "disabled":
+                            status_icon = "🟡"
+                            disabled_users += 1
+                        else:  # deleted
+                            status_icon = "🔴"
+                            deleted_users += 1
+                        
+                        users_list.append(f"{status_icon} {username}")
+                        total_users += 1
+                    
                     embed.add_field(
                         name=f"🖥️ {server_name}",
-                        value=f"**URL:** {server_url}\n**Utilizatori:**\n{users_list}",
+                        value=f"**URL:** {server_url}\n**Utilizatori:**\n" + "\n".join(users_list),
                         inline=False
                     )
             
-            embed.set_footer(text=f"Total utilizatori: {total_users}")
+            # Footer cu statistici
+            footer_text = f"Total: {total_users} | "
+            footer_text += f"🟢 Activi: {active_users} | "
+            footer_text += f"🟡 Dezactivați: {disabled_users} | "
+            footer_text += f"🔴 Șterși: {deleted_users}"
+            
+            embed.set_footer(text=footer_text)
             
         else:
             # Caută după username-ul Jellyfin
@@ -445,16 +747,41 @@ class JellyfinCog(commands.Cog):
             server_url = servers_data.get(user_info["server_name"], {}).get("url", "URL necunoscut")
             created_at = datetime.fromisoformat(user_info["created_at"]).strftime("%d.%m.%Y %H:%M")
             
+            # Determină culoarea și statusul
+            status = user_info.get("status", "active")
+            if status == "active":
+                color = 0x00ff00
+                status_text = "🟢 Activ"
+            elif status == "disabled":
+                color = 0xffa500
+                status_text = "🟡 Dezactivat"
+            else:  # deleted
+                color = 0xff0000
+                status_text = "🔴 Șters"
+            
             embed = discord.Embed(
                 title="🔍 Informații utilizator Jellyfin",
-                color=0xe74c3c,
+                color=color,
                 description=f"Detalii pentru utilizatorul **{utilizator}**"
             )
             
             embed.add_field(name="👤 Utilizator Discord", value=discord_user_name, inline=True)
+            embed.add_field(name="📊 Status", value=status_text, inline=True)
             embed.add_field(name="🖥️ Server", value=user_info["server_name"], inline=True)
             embed.add_field(name="🌐 URL Server", value=server_url, inline=False)
             embed.add_field(name="📅 Creat la", value=created_at, inline=True)
+            
+            # Calculează zilele de inactivitate (doar pentru utilizatori activi/dezactivați)
+            if status != "deleted":
+                created_date = datetime.fromisoformat(user_info["created_at"])
+                days_since_creation = (datetime.now() - created_date).days
+                
+                if status == "active":
+                    if days_since_creation >= 30:
+                        embed.add_field(name="⚠️ Atenție", value="Acest utilizator ar trebui să fie dezactivat pentru inactivitate", inline=False)
+                elif status == "disabled":
+                    if days_since_creation >= 60:
+                        embed.add_field(name="🗑️ Atenție", value="Acest utilizator ar trebui să fie șters pentru inactivitate", inline=False)
             
             # Caută și alți utilizatori de pe același server Discord
             user_id_str = str(user_info["discord_user_id"])
@@ -462,7 +789,17 @@ class JellyfinCog(commands.Cog):
                 all_servers = []
                 total_accounts = 0
                 for srv_name, srv_users in users_data[user_id_str].items():
-                    all_servers.append(f"• {srv_name} ({len(srv_users)} utilizatori)")
+                    active_count = sum(1 for u in srv_users.values() if u.get("status", "active") == "active")
+                    disabled_count = sum(1 for u in srv_users.values() if u.get("status", "active") == "disabled")
+                    deleted_count = sum(1 for u in srv_users.values() if u.get("status", "active") == "deleted")
+                    
+                    status_info = f"🟢{active_count}"
+                    if disabled_count > 0:
+                        status_info += f" 🟡{disabled_count}"
+                    if deleted_count > 0:
+                        status_info += f" 🔴{deleted_count}"
+                    
+                    all_servers.append(f"• {srv_name} ({status_info})")
                     total_accounts += len(srv_users)
                 
                 if len(all_servers) > 1:
