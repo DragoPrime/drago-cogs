@@ -9,7 +9,7 @@ class GeminiCog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.config = Config.get_conf(self, identifier=1854567350)
+        self.config = Config.get_conf(self, identifier=1234567890)
         default_global = {
             "api_key": None
         }
@@ -45,6 +45,3 @@ class GeminiCog(commands.Cog):
                 await ctx.send("Îmi pare rău, nu am putut genera un răspuns valid.")
         except Exception as e:
             await ctx.send(f"A apărut o eroare: {e}")
-
-async def setup(bot):
-    await bot.add_cog(GeminiCog(bot))
