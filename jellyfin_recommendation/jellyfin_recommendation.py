@@ -4,6 +4,7 @@ import aiohttp
 import random
 import discord
 from datetime import datetime, timedelta
+from googletrans import Translator
 
 class JellyfinRecommendation(commands.Cog):
     """Provide random Jellyfin recommendations every Monday"""
@@ -29,6 +30,7 @@ class JellyfinRecommendation(commands.Cog):
         self.start_tasks()
         self.tmdb_base_url = "https://api.themoviedb.org/3"
         self.poster_base_url = "https://image.tmdb.org/t/p/w500"
+        self.translator = Translator()
 
     def start_tasks(self):
         self.bg_task = self.bot.loop.create_task(self.monday_recommendation_loop())
@@ -36,6 +38,24 @@ class JellyfinRecommendation(commands.Cog):
     def cog_unload(self):
         if self.bg_task:
             self.bg_task.cancel()
+
+    async def translate_to_romanian(self, text):
+        """Traduce textul în română folosind Google Translate"""
+        if not text or text == 'Fără descriere disponibilă.':
+            return text
+        
+        try:
+            # Rulăm traducerea într-un executor pentru a nu bloca event loop-ul
+            loop = asyncio.get_event_loop()
+            translation = await loop.run_in_executor(
+                None, 
+                lambda: self.translator.translate(text, src='en', dest='ro')
+            )
+            return translation.text
+        except Exception as e:
+            print(f"Eroare la traducere: {e}")
+            # Returnăm textul original dacă traducerea eșuează
+            return text
 
     async def monday_recommendation_loop(self):
         """Background loop for Monday recommendations"""
@@ -144,6 +164,8 @@ class JellyfinRecommendation(commands.Cog):
         # Folosește descrierea TMDb dacă există și nu este goală
         if tmdb_data and tmdb_data.get('overview'):
             overview = tmdb_data['overview']
+            # Traducem descrierea în română
+            overview = await self.translate_to_romanian(overview)
         
         # Limitează lungimea descrierii
         if len(overview) > 1000:
@@ -315,6 +337,8 @@ class JellyfinRecommendation(commands.Cog):
             # Folosește descrierea TMDb dacă există și nu este goală
             if tmdb_data and tmdb_data.get('overview'):
                 overview = tmdb_data['overview']
+                # Traducem descrierea în română
+                overview = await self.translate_to_romanian(overview)
             
             # Limitează lungimea descrierii
             if len(overview) > 1000:
