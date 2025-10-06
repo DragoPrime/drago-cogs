@@ -4,7 +4,7 @@ import aiohttp
 import random
 import discord
 from datetime import datetime, timedelta
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
 class JellyfinRecommendation(commands.Cog):
     """Provide random Jellyfin recommendations every Monday"""
@@ -30,7 +30,6 @@ class JellyfinRecommendation(commands.Cog):
         self.start_tasks()
         self.tmdb_base_url = "https://api.themoviedb.org/3"
         self.poster_base_url = "https://image.tmdb.org/t/p/w500"
-        self.translator = Translator()
 
     def start_tasks(self):
         self.bg_task = self.bot.loop.create_task(self.monday_recommendation_loop())
@@ -47,11 +46,11 @@ class JellyfinRecommendation(commands.Cog):
         try:
             # Rulăm traducerea într-un executor pentru a nu bloca event loop-ul
             loop = asyncio.get_event_loop()
-            translation = await loop.run_in_executor(
+            translated = await loop.run_in_executor(
                 None, 
-                lambda: self.translator.translate(text, src='en', dest='ro')
+                lambda: GoogleTranslator(source='auto', target='ro').translate(text)
             )
-            return translation.text
+            return translated
         except Exception as e:
             print(f"Eroare la traducere: {e}")
             # Returnăm textul original dacă traducerea eșuează
