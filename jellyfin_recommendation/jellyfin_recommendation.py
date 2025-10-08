@@ -196,7 +196,7 @@ class JellyfinRecommendation(commands.Cog):
             embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
         
         # Adăugare text informativ despre comanda manuală
-        embed.add_field(name="Caută mai multe recomandări:", value="Folosește comanda `.recomanda` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
+        embed.add_field(name="Caută mai multe recomandări:", value="Folosește comanda `.recomanda anime` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
 
         channel = guild.get_channel(settings['channel_id'])
         if channel:
@@ -294,8 +294,11 @@ class JellyfinRecommendation(commands.Cog):
         return None
 
     @commands.command(name="recomanda")
-    async def recomanda(self, ctx):
-        """Generează manual o recomandare aleatorie de film sau serial"""
+    async def recomanda_anime(self, ctx, tip: str = None):
+        """Generează manual o recomandare aleatorie de anime"""
+        # Verificăm dacă parametrul este "anime"
+        if tip and tip.lower() != "anime":
+            return
         settings = await self.config.guild(ctx.guild).all()
         if not all(k in settings and settings[k] for k in ['base_url', 'api_key']):
             help_msg = (
@@ -369,7 +372,7 @@ class JellyfinRecommendation(commands.Cog):
                 embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
                 
             # Adăugare text informativ despre comanda manuală
-            embed.add_field(name="Caută mai multe recomandări:", value="Folosește comanda `.recomanda` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
+            embed.add_field(name="Caută mai multe recomandări:", value="Folosește comanda `.recomanda anime` pentru a primi o recomandare personalizată oricând dorești!", inline=False)
 
             # Ștergem mesajul de așteptare
             await waiting_msg.delete()
