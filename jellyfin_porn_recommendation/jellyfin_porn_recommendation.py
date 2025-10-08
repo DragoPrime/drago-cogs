@@ -293,12 +293,14 @@ class JellyfinPornRecommendation(commands.Cog):
         
         return None
 
-    @commands.command(name="recomanda")
-    async def recomanda_porn(self, ctx, tip: str = None):
+    @commands.group(name="recomanda", invoke_without_command=True)
+    async def recomanda_group(self, ctx):
+        """Comenzi pentru recomandări"""
+        pass
+    
+    @recomanda_group.command(name="porn")
+    async def recomanda_porn(self, ctx):
         """Generează manual o recomandare aleatorie de porn"""
-        # Verificăm dacă parametrul este "porn"
-        if tip and tip.lower() != "porn":
-            return
         
         settings = await self.config.guild(ctx.guild).all()
         if not all(k in settings and settings[k] for k in ['base_url', 'api_key']):
