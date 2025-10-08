@@ -1,0 +1,14 @@
+{
+    "name": "JellyfinPornRecommendation",
+    "short": "Oferă recomandări săptămânale de porn de pe serverul Jellyfin",
+    "description": "Un modul care trimite automat o recomandare aleatorie de porn în fiecare luni la ora 18:00 într-un canal specificat.",
+    "end_user_data_statement": "Acest modul nu stochează date personale ale utilizatorilor.",
+    "author": ["Drago Prime"],
+    "required_cogs": {},
+    "requirements": ["aiohttp", "deep-translator"],
+    "tags": ["jellyfin", "recommendation", "media", "weekly", "adult"],
+    "min_bot_version": "3.5.0",
+    "hidden": false,
+    "disabled": false,
+    "type": "COG"
+}
