@@ -23,13 +23,15 @@ class JellyfinRecommendation(commands.Cog):
                 "base_url": None,
                 "api_key": None,
                 "channel_id": None,
-                "tmdb_api_key": None
+                "tmdb_api_key": None,
+                "server_name": "Freia [SERVER 2]"
             },
             "porn": {
                 "base_url": None,
                 "api_key": None,
                 "channel_id": None,
-                "tmdb_api_key": None
+                "tmdb_api_key": None,
+                "server_name": "Freia [SERVER 2]"
             }
         }
         
@@ -186,7 +188,8 @@ class JellyfinRecommendation(commands.Cog):
         item_id = item.get('Id')
         if item_id:
             web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
-            embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
+            server_name = settings.get('server_name', 'Freia [SERVER 2]')
+            embed.add_field(name="Vizionare Online:", value=f"[{server_name}]({web_url})", inline=False)
         
         cmd_text = f"`.recomanda {media_type}`"
         embed.add_field(name="Caută mai multe recomandări:", value=f"Folosește comanda {cmd_text} pentru a primi o recomandare personalizată oricând dorești!", inline=False)
@@ -229,6 +232,13 @@ class JellyfinRecommendation(commands.Cog):
 
     @commands.command()
     @commands.admin_or_permissions(administrator=True)
+    async def setanimeservername(self, ctx, *, server_name: str):
+        """Setează numele serverului care va apărea în link-ul de vizionare pentru anime"""
+        await self.config.guild(ctx.guild).anime.server_name.set(server_name)
+        await ctx.send(f"Numele serverului pentru anime a fost setat la: {server_name}")
+
+    @commands.command()
+    @commands.admin_or_permissions(administrator=True)
     async def showanimesecsettings(self, ctx):
         """Show current anime recommendation settings"""
         settings = await self.config.guild(ctx.guild).anime.all()
@@ -241,6 +251,7 @@ class JellyfinRecommendation(commands.Cog):
         embed.add_field(name="URL Server", value=settings.get('base_url') or "Nesetat", inline=False)
         embed.add_field(name="API Key Jellyfin", value="Setat ✓" if settings.get('api_key') else "Nesetat ✗", inline=False)
         embed.add_field(name="API Key TMDb", value="Setat ✓" if settings.get('tmdb_api_key') else "Nesetat ✗", inline=False)
+        embed.add_field(name="Nume Server", value=settings.get('server_name', 'Freia [SERVER 2]'), inline=False)
         embed.add_field(name="Canal Recomandări", value=channel.mention if channel else "Nesetat", inline=False)
         
         await ctx.send(embed=embed)
@@ -279,6 +290,13 @@ class JellyfinRecommendation(commands.Cog):
 
     @commands.command()
     @commands.admin_or_permissions(administrator=True)
+    async def setpornservername(self, ctx, *, server_name: str):
+        """Setează numele serverului care va apărea în link-ul de vizionare pentru porn"""
+        await self.config.guild(ctx.guild).porn.server_name.set(server_name)
+        await ctx.send(f"Numele serverului pentru porn a fost setat la: {server_name}")
+
+    @commands.command()
+    @commands.admin_or_permissions(administrator=True)
     async def showpornrecsettings(self, ctx):
         """Show current porn recommendation settings"""
         settings = await self.config.guild(ctx.guild).porn.all()
@@ -291,6 +309,7 @@ class JellyfinRecommendation(commands.Cog):
         embed.add_field(name="URL Server", value=settings.get('base_url') or "Nesetat", inline=False)
         embed.add_field(name="API Key Jellyfin", value="Setat ✓" if settings.get('api_key') else "Nesetat ✗", inline=False)
         embed.add_field(name="API Key TMDb", value="Setat ✓" if settings.get('tmdb_api_key') else "Nesetat ✗", inline=False)
+        embed.add_field(name="Nume Server", value=settings.get('server_name', 'Freia [SERVER 2]'), inline=False)
         embed.add_field(name="Canal Recomandări", value=channel.mention if channel else "Nesetat", inline=False)
         
         await ctx.send(embed=embed)
@@ -408,7 +427,8 @@ class JellyfinRecommendation(commands.Cog):
             item_id = item.get('Id')
             if item_id:
                 web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
-                embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
+                server_name = settings.get('server_name', 'Freia [SERVER 2]')
+                embed.add_field(name="Vizionare Online:", value=f"[{server_name}]({web_url})", inline=False)
                 
             cmd_text = f"`.recomanda {media_type}`"
             embed.add_field(name="Caută mai multe recomandări:", value=f"Folosește comanda {cmd_text} pentru a primi o recomandare personalizată oricând dorești!", inline=False)
