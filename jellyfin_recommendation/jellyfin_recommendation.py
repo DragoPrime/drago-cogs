@@ -196,7 +196,7 @@ class JellyfinRecommendation(commands.Cog):
 
         channel = guild.get_channel(settings['channel_id'])
         if channel:
-            await channel.send("**Recomandarea Domnișoarei Freia de săptămâna aceasta:**", embed=embed)
+            await channel.send("**Recomandarea de săptămâna aceasta:**", embed=embed)
 
     # ===== COMENZI ANIME =====
     @commands.command()
