@@ -6,6 +6,75 @@ from datetime import datetime
 from typing import List, Dict, Any
 import asyncio
 
+class TMDBSelectionView(discord.ui.View):
+    """View for selecting from TMDB search results"""
+    
+    def __init__(self, cog, ctx, results: List[Dict[Any, Any]], query: str):
+        super().__init__(timeout=60)
+        self.cog = cog
+        self.ctx = ctx
+        self.results = results
+        self.query = query
+        self.selected_item = None
+        
+        # Adăugăm butoane pentru fiecare rezultat (max 5 pentru a nu depăși limita Discord)
+        for idx, result in enumerate(results[:5]):
+            button = discord.ui.Button(
+                label=f"{idx + 1}. {result['title'][:80]}",
+                style=discord.ButtonStyle.primary,
+                custom_id=f"select_{idx}"
+            )
+            button.callback = self.create_callback(idx)
+            self.add_item(button)
+    
+    def create_callback(self, index: int):
+        """Creează un callback pentru fiecare buton"""
+        async def callback(interaction: discord.Interaction):
+            if interaction.user != self.ctx.author:
+                await interaction.response.send_message(
+                    "Doar persoana care a inițiat comanda poate selecta rezultatul.",
+                    ephemeral=True
+                )
+                return
+            
+            self.selected_item = self.results[index]
+            
+            # Dezactivăm toate butoanele
+            for child in self.children:
+                child.disabled = True
+            
+            await interaction.response.edit_message(
+                content=f"✅ Ai selectat: **{self.selected_item['title']}**\n\nSe caută pe serverul Jellyfin...",
+                embed=None,
+                view=self
+            )
+            
+            # Căutăm pe Jellyfin
+            await self.cog.search_jellyfin_by_tmdb(self.ctx, self.selected_item, self.query)
+            
+            self.stop()
+        
+        return callback
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Verifică dacă utilizatorul care interacționează este cel care a inițiat comanda"""
+        return interaction.user == self.ctx.author
+    
+    async def on_timeout(self):
+        """Dezactivează butoanele după timeout"""
+        for child in self.children:
+            child.disabled = True
+        
+        try:
+            if hasattr(self, 'message') and self.message:
+                await self.message.edit(
+                    content="⏱️ Timpul de selecție a expirat.",
+                    view=self
+                )
+        except (discord.NotFound, discord.HTTPException):
+            pass
+
+
 class JellyfinSearchView(discord.ui.View):
     """View for paginated Jellyfin search results"""
     
@@ -17,16 +86,13 @@ class JellyfinSearchView(discord.ui.View):
         self.query = query
         self.total_results = total_results
         self.current_page = 0
-        self.total_pages = len(items)  # Un rezultat per pagină
+        self.total_pages = len(items)
         
-        # Actualizează starea butoanelor inițial
         self._update_buttons()
     
     def _update_buttons(self):
         """Actualizează starea butoanelor în funcție de pagina curentă"""
-        # Dezactivează butonul înapoi dacă suntem pe prima pagină
         self.children[0].disabled = self.current_page == 0
-        # Dezactivează butonul înainte dacă suntem pe ultima pagină
         self.children[1].disabled = self.current_page >= self.total_pages - 1
         
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -41,21 +107,18 @@ class JellyfinSearchView(discord.ui.View):
     
     def get_current_page_embed(self) -> discord.Embed:
         """Creează un embed pentru un singur rezultat (pagina curentă)"""
-        # Obține doar un singur item bazat pe indexul paginii curente
         item = self.items[self.current_page]
         
         title = item.get('Name', 'Titlu necunoscut')
         if year := item.get('ProductionYear'):
             title += f" ({year})"
             
-        # Creează un embed pentru rezultatul curent
         embed = discord.Embed(
             title=f"Rezultatul {self.current_page + 1} pentru '{self.query}'",
             description=title,
             color=discord.Color.blue()
         )
         
-        # Adaugă detalii despre media
         item_type = item.get('Type', 'Tip necunoscut')
         if item_type == "Movie":
             item_type = "Film"
@@ -70,16 +133,12 @@ class JellyfinSearchView(discord.ui.View):
         if community_rating := item.get('CommunityRating'):
             embed.add_field(name="Rating", value=f"⭐ {community_rating:.1f}", inline=True)
 
-        # Descrierea este preluată din TMDB în funcție de ID-ul extern TMDB
-        # Aceasta va fi adăugată async în background - momentan afișăm descrierea din Jellyfin
         if overview := item.get('Overview'):
-            # Limitează descrierea la 300 de caractere dacă e prea lungă
             if len(overview) > 300:
                 overview = overview[:297] + "..."
             embed.add_field(name="Descriere", value=overview, inline=False)
 
         if item.get('TMDBOverview'):
-            # Dacă avem deja descriere TMDB din cache, o folosim pe aceasta
             tmdb_overview = item.get('TMDBOverview')
             if len(tmdb_overview) > 300:
                 tmdb_overview = tmdb_overview[:297] + "..."
@@ -88,23 +147,18 @@ class JellyfinSearchView(discord.ui.View):
         if genres := item.get('Genres'):
             embed.add_field(name="Genuri", value=", ".join(genres[:4]), inline=False)
             
-        # Adaugă imagine thumbnail
-        # Încercăm să utilizăm imaginea TMDB dacă este disponibilă
         if item.get('TMDBPosterPath'):
             thumbnail_url = f"https://image.tmdb.org/t/p/w342{item['TMDBPosterPath']}"
             embed.set_thumbnail(url=thumbnail_url)
-        # Ca fallback, folosim imaginea din Jellyfin
         elif item.get('Id'):
             thumbnail_url = f"{self.cog.base_url}/Items/{item['Id']}/Images/Primary?maxHeight=400&maxWidth=266&quality=90&api_key={self.cog.api_key}"
             embed.set_thumbnail(url=thumbnail_url)
         
-        # Adaugă link pentru vizualizare
         item_id = item.get('Id')
         if item_id:
             web_url = f"{self.cog.base_url}/web/index.html#!/details?id={item_id}"
             embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
         
-        # Adaugă footer cu informații despre paginare
         embed.set_footer(text=f"Pagina {self.current_page + 1}/{self.total_pages} • S-au găsit {self.total_results} rezultate în total")
         
         return embed
@@ -133,7 +187,6 @@ class JellyfinSearchView(discord.ui.View):
             await interaction.response.send_message("Nu sunt disponibile informații suplimentare pentru acest titlu.", ephemeral=True)
             return
             
-        # Crează un mesaj cu link-ul direct și alte informații utile
         item_name = item.get('Name', 'Titlu necunoscut')
         web_url = f"{self.cog.base_url}/web/index.html#!/details?id={item_id}"
         
@@ -147,7 +200,6 @@ class JellyfinSearchView(discord.ui.View):
         for child in self.children:
             child.disabled = True
             
-        # Încercăm să actualizăm mesajul, dar ignorăm erorile dacă mesajul nu mai există
         try:
             message = self.message
             if message:
@@ -206,7 +258,6 @@ class JellyfinSearch(commands.Cog):
         await self.config.api_key.set(api_key)
         self.api_key = api_key
         await ctx.send("Cheia API Jellyfin a fost setată.")
-        # Delete the message containing the API key for security
         await ctx.message.delete()
     
     @commands.command()
@@ -216,7 +267,6 @@ class JellyfinSearch(commands.Cog):
         await self.config.tmdb_api_key.set(api_key)
         self.tmdb_api_key = api_key
         await ctx.send("Cheia API TMDB a fost setată.")
-        # Delete the message containing the API key for security
         await ctx.message.delete()
 
     def format_runtime(self, runtime_ticks):
@@ -230,21 +280,137 @@ class JellyfinSearch(commands.Cog):
             return f"{hours}h {remaining_minutes}m"
         return f"{remaining_minutes}m"
     
+    async def search_tmdb(self, query: str):
+        """Search TMDB for movies and TV shows"""
+        if not self.tmdb_api_key:
+            return None
+        
+        results = []
+        
+        # Căutăm atât filme cât și seriale
+        for media_type in ['movie', 'tv']:
+            encoded_query = urllib.parse.quote(query)
+            search_url = f"https://api.themoviedb.org/3/search/{media_type}?api_key={self.tmdb_api_key}&query={encoded_query}&language=ro-RO"
+            
+            async with aiohttp.ClientSession() as session:
+                try:
+                    async with session.get(search_url, timeout=10) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            for item in data.get('results', [])[:5]:  # Limităm la primele 5 rezultate per tip
+                                # Obținem și titlurile alternative
+                                tmdb_id = item.get('id')
+                                item['media_type'] = media_type
+                                item['title'] = item.get('title') if media_type == 'movie' else item.get('name')
+                                item['alternative_titles'] = await self.get_alternative_titles(tmdb_id, media_type)
+                                results.append(item)
+                except Exception as e:
+                    pass
+        
+        return results[:10]  # Returnăm maximum 10 rezultate totale
+    
+    async def get_alternative_titles(self, tmdb_id: int, media_type: str):
+        """Get alternative titles from TMDB"""
+        if not self.tmdb_api_key:
+            return []
+        
+        titles = []
+        endpoint = "alternative_titles" if media_type == "movie" else "alternative_titles"
+        url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}/{endpoint}?api_key={self.tmdb_api_key}"
+        
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(url, timeout=10) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        results_key = "titles" if media_type == "movie" else "results"
+                        
+                        for item in data.get(results_key, []):
+                            if media_type == "movie":
+                                titles.append(item.get('title'))
+                            else:
+                                titles.append(item.get('name'))
+            except Exception as e:
+                pass
+        
+        return titles
+    
+    async def search_jellyfin_by_tmdb(self, ctx, tmdb_item: Dict[Any, Any], original_query: str):
+        """Search Jellyfin using TMDB titles"""
+        # Creăm o listă de titluri de căutat
+        search_titles = [tmdb_item['title']]
+        
+        # Adăugăm titlul original dacă există
+        if 'original_title' in tmdb_item and tmdb_item['original_title'] != tmdb_item['title']:
+            search_titles.append(tmdb_item['original_title'])
+        if 'original_name' in tmdb_item and tmdb_item['original_name'] != tmdb_item['title']:
+            search_titles.append(tmdb_item['original_name'])
+        
+        # Adăugăm titlurile alternative
+        search_titles.extend(tmdb_item.get('alternative_titles', []))
+        
+        # Eliminăm duplicatele
+        search_titles = list(dict.fromkeys([t for t in search_titles if t]))
+        
+        all_items = []
+        seen_ids = set()
+        
+        async with ctx.typing():
+            for title in search_titles[:10]:  # Limităm la primele 10 titluri pentru a nu supraîncărca
+                encoded_query = urllib.parse.quote(title)
+                search_url = f"{self.base_url}/Items?searchTerm={encoded_query}&IncludeItemTypes=Movie,Series&Recursive=true&SearchType=String&IncludeMedia=true&IncludeOverview=true&Limit=50&api_key={self.api_key}"
+                
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        async with session.get(search_url) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                items = data.get('Items', [])
+                                
+                                # Adăugăm doar itemele noi (fără duplicate)
+                                for item in items:
+                                    item_id = item.get('Id')
+                                    if item_id and item_id not in seen_ids:
+                                        seen_ids.add(item_id)
+                                        all_items.append(item)
+                    except Exception as e:
+                        pass
+                
+                # Adăugăm un mic delay între cereri
+                await asyncio.sleep(0.3)
+        
+        if not all_items:
+            await ctx.send(f"❌ Nu s-au găsit rezultate pe serverul Jellyfin pentru **{tmdb_item['title']}**.")
+            return
+        
+        # Procesăm primele 10 rezultate pentru a obține informații TMDB îmbogățite
+        enhanced_items = []
+        for item in all_items[:10]:
+            enhanced_item = await self.get_tmdb_info(item)
+            enhanced_items.append(enhanced_item)
+            await asyncio.sleep(0.5)
+        
+        if len(all_items) > 10:
+            enhanced_items.extend(all_items[10:])
+        
+        # Creăm view-ul pentru paginare
+        view = JellyfinSearchView(self, ctx, enhanced_items, tmdb_item['title'], len(all_items))
+        embed = view.get_current_page_embed()
+        message = await ctx.send(embed=embed, view=view)
+        view.message = message
+    
     async def get_tmdb_info(self, item):
         """Get additional information from TMDB API"""
         if not self.tmdb_api_key:
             return item
         
-        # Determină tipul de media pentru URL-ul corect TMDB
         media_type = "movie" if item.get('Type') == "Movie" else "tv"
         
-        # Verificăm dacă avem un ID TMDB salvat din providerul extern
         tmdb_id = None
         if providers := item.get('ProviderIds', {}):
             tmdb_id = providers.get('Tmdb')
         
         if not tmdb_id:
-            # Dacă nu avem TMDB ID, putem încerca o căutare după nume
             name = item.get('Name')
             year = item.get('ProductionYear', '')
             
@@ -260,50 +426,37 @@ class JellyfinSearch(commands.Cog):
             
             async with aiohttp.ClientSession() as session:
                 try:
-                    # TMDB API este cunoscut pentru viteza redusă - setăm un timeout mai mare
                     async with session.get(search_url, timeout=10) as response:
                         if response.status == 200:
                             data = await response.json()
                             results = data.get('results', [])
                             
                             if results:
-                                # Luăm primul rezultat care se potrivește cel mai bine
                                 tmdb_id = results[0].get('id')
                                 
-                                # Adăugăm și posterul dacă este disponibil
                                 if poster_path := results[0].get('poster_path'):
                                     item['TMDBPosterPath'] = poster_path
                                 
-                                # Adăugăm și descrierea în română dacă este disponibilă
                                 if overview := results[0].get('overview'):
                                     item['TMDBOverview'] = overview
-                        else:
-                            # Error handling - nu putem obține date TMDB
-                            pass
                 except Exception as e:
-                    # Error handling pentru cazul în care cererea eșuează
                     pass
         
-        # Dacă avem un ID TMDB, putem obține informații detaliate
         if tmdb_id:
             details_url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}?api_key={self.tmdb_api_key}&language=ro-RO"
             
             async with aiohttp.ClientSession() as session:
                 try:
-                    # TMDB API este cunoscut pentru viteza redusă - setăm un timeout mai mare
                     async with session.get(details_url, timeout=10) as response:
                         if response.status == 200:
                             data = await response.json()
                             
-                            # Adăugăm descrierea în română
                             if overview := data.get('overview'):
                                 item['TMDBOverview'] = overview
                             
-                            # Adăugăm posterul
                             if poster_path := data.get('poster_path'):
                                 item['TMDBPosterPath'] = poster_path
                 except Exception as e:
-                    # Error handling pentru cazul în care cererea eșuează
                     pass
         
         return item
@@ -317,53 +470,46 @@ class JellyfinSearch(commands.Cog):
         
         if not self.base_url or not self.api_key:
             return await ctx.send("Te rog să setezi mai întâi URL-ul și cheia API folosind `setjellyfinurl` și `setjellyfinapi`")
-
-        encoded_query = urllib.parse.quote(query)
-        # Utilizăm o limită de 50 de rezultate pentru paginare
-        search_url = f"{self.base_url}/Items?searchTerm={encoded_query}&IncludeItemTypes=Movie,Series&Recursive=true&SearchType=String&IncludeMedia=true&IncludeOverview=true&Limit=50&api_key={self.api_key}"
-
+        
+        if not self.tmdb_api_key:
+            return await ctx.send("Te rog să setezi mai întâi cheia API TMDB folosind `freiatmdb`")
+        
+        # Căutăm mai întâi pe TMDB
         async with ctx.typing():
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.get(search_url) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            items = data.get('Items', [])
-                            total_results = data.get('TotalRecordCount', 0)
-
-                            if not items:
-                                return await ctx.send("Nu s-au găsit rezultate. Atenție: căutarea se face după titlul de pe TMDB (cel în engleză, nu japoneză).")
-                            
-                            # Mesaj de așteptare pentru procesarea datelor TMDB
-                            wait_msg = await ctx.send("Se caută în librăria Freia, vă rugăm să așteptați...")
-                            
-                            # Procesăm primele 10 rezultate pentru a obține informații TMDB
-                            # Limitarea este necesară pentru a nu face prea multe cereri și a evita rate limiting
-                            enhanced_items = []
-                            for item in items[:10]:
-                                # Utilizăm get_tmdb_info pentru a îmbogăți datele
-                                enhanced_item = await self.get_tmdb_info(item)
-                                enhanced_items.append(enhanced_item)
-                                
-                                # Adăugăm un mic delay între cereri pentru a evita rate limiting la TMDB
-                                await asyncio.sleep(0.5)
-                            
-                            # Adăugăm și restul rezultatelor fără îmbogățire
-                            if len(items) > 10:
-                                enhanced_items.extend(items[10:])
-                            
-                            # Ștergem mesajul de așteptare
-                            await wait_msg.delete()
-                            
-                            # Creăm view-ul pentru paginare
-                            view = JellyfinSearchView(self, ctx, enhanced_items, query, total_results)
-                            # Trimitem primul embed cu view-ul atașat
-                            embed = view.get_current_page_embed()
-                            message = await ctx.send(embed=embed, view=view)
-                            # Stocăm mesajul pentru a putea face referință la el în timeout
-                            view.message = message
-                        else:
-                            error_text = await response.text()
-                            await ctx.send(f"Eroare: Nu s-a putut căuta pe serverul Jellyfin (Cod status: {response.status})\nDetalii eroare: {error_text}")
-                except Exception as e:
-                    await ctx.send(f"Eroare la conectarea cu serverul Jellyfin: {str(e)}")
+            wait_msg = await ctx.send("🔍 Se caută pe TMDB...")
+            tmdb_results = await self.search_tmdb(query)
+            
+            if not tmdb_results:
+                await wait_msg.edit(content="❌ Nu s-au găsit rezultate pe TMDB.")
+                return
+            
+            # Dacă avem un singur rezultat, căutăm direct pe Jellyfin
+            if len(tmdb_results) == 1:
+                await wait_msg.edit(content=f"✅ S-a găsit un rezultat pe TMDB: **{tmdb_results[0]['title']}**\n\nSe caută pe serverul Jellyfin...")
+                await self.search_jellyfin_by_tmdb(ctx, tmdb_results[0], query)
+                return
+            
+            # Dacă avem mai multe rezultate, afișăm lista pentru selecție
+            await wait_msg.delete()
+            
+            # Creăm embed cu rezultatele TMDB
+            embed = discord.Embed(
+                title=f"🎬 Rezultate TMDB pentru '{query}'",
+                description="Selectează titlul pe care îl cauți:",
+                color=discord.Color.gold()
+            )
+            
+            for idx, result in enumerate(tmdb_results[:5]):
+                media_type = "🎬 Film" if result['media_type'] == 'movie' else "📺 Serial"
+                year = result.get('release_date', result.get('first_air_date', ''))[:4] if result.get('release_date') or result.get('first_air_date') else 'N/A'
+                
+                embed.add_field(
+                    name=f"{idx + 1}. {result['title']} ({year})",
+                    value=f"{media_type}",
+                    inline=False
+                )
+            
+            # Creăm view-ul pentru selecție
+            view = TMDBSelectionView(self, ctx, tmdb_results, query)
+            message = await ctx.send(embed=embed, view=view)
+            view.message = message
