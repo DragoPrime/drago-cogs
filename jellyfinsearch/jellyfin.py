@@ -302,7 +302,8 @@ class JellyfinSearch(commands.Cog):
                 search_query += f" {year}"
                 
             encoded_query = urllib.parse.quote(search_query)
-            search_url = f"https://api.themoviedb.org/3/search/{media_type}?api_key={self.tmdb_api_key}&query={encoded_query}&language=ro-RO"
+            # Căutăm mai întâi în engleză pentru rezultate mai bune
+            search_url = f"https://api.themoviedb.org/3/search/{media_type}?api_key={self.tmdb_api_key}&query={encoded_query}&language=en-US"
             
             async with aiohttp.ClientSession() as session:
                 try:
@@ -323,21 +324,33 @@ class JellyfinSearch(commands.Cog):
                     pass
         
         if tmdb_id:
-            details_url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}?api_key={self.tmdb_api_key}&language=ro-RO"
-            
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.get(details_url, timeout=10) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            
-                            if overview := data.get('overview'):
-                                item['TMDBOverview'] = overview
-                            
-                            if poster_path := data.get('poster_path'):
-                                item['TMDBPosterPath'] = poster_path
-                except Exception as e:
-                    pass
+            # Încercăm să obținem descrierea în română
+            overview_found = False
+            for language in ['ro-RO', 'en-US']:
+                details_url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}?api_key={self.tmdb_api_key}&language={language}"
+                
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        async with session.get(details_url, timeout=10) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                
+                                # Dacă găsim descriere, o salvăm și ieșim din bucla
+                                if overview := data.get('overview'):
+                                    if overview.strip():  # Verificăm că nu e goală
+                                        item['TMDBOverview'] = overview
+                                        overview_found = True
+                                
+                                # Salvăm posterul doar o dată (prima iterație)
+                                if not item.get('TMDBPosterPath'):
+                                    if poster_path := data.get('poster_path'):
+                                        item['TMDBPosterPath'] = poster_path
+                                
+                                # Dacă am găsit descriere, nu mai încercăm alte limbi
+                                if overview_found:
+                                    break
+                    except Exception as e:
+                        pass
         
         return item
 
