@@ -5,31 +5,28 @@ import discord
 from datetime import datetime, timedelta
 
 class JellyfinNewContent(commands.Cog):
-    """Announces new movies and TV shows added to Jellyfin"""
+    """Announces new movies and TV shows added to multiple Jellyfin servers"""
 
     def __init__(self, bot):
         self.bot = bot
         self.config = Config.get_conf(
             self,
-            identifier=273845109,  # Unique identifier for this cog
+            identifier=273845109,
             force_registration=True
         )
         
-        # Default settings
+        # Default settings - now using servers list
         default_guild = {
-            "base_url": None,
-            "api_key": None,
-            "announcement_channel_id": None,
-            "tmdb_api_key": None,
+            "servers": [],  # List of server configurations
+            "deepl_api_key": None,  # DeepL API key for translations
             "check_interval": 6,  # Hours between checks
-            "last_check": None,    # Timestamp of last check
-            "initialized": False   # Flag to mark if the plugin has been initialized
         }
         
         self.config.register_guild(**default_guild)
         self.bg_task = None
         self.tmdb_base_url = "https://api.themoviedb.org/3"
         self.poster_base_url = "https://image.tmdb.org/t/p/w500"
+        self.deepl_api_url = "https://api-free.deepl.com/v2/translate"  # Use api.deepl.com for paid plans
         self.start_tasks()
 
     def start_tasks(self):
@@ -46,10 +43,12 @@ class JellyfinNewContent(commands.Cog):
             try:
                 all_guilds = await self.config.all_guilds()
                 for guild_id, settings in all_guilds.items():
-                    if all(k in settings and settings[k] for k in ['base_url', 'api_key', 'announcement_channel_id']):
-                        guild = self.bot.get_guild(guild_id)
-                        if guild:
-                            await self.check_and_announce_new_content(guild)
+                    guild = self.bot.get_guild(guild_id)
+                    if guild and settings.get('servers'):
+                        # Check each server configured for this guild
+                        for server in settings['servers']:
+                            if self._is_server_configured(server):
+                                await self.check_and_announce_new_content(guild, server, settings)
             except Exception as e:
                 print(f"Error in check_new_content_loop: {e}")
             
@@ -62,32 +61,37 @@ class JellyfinNewContent(commands.Cog):
             # Convert hours to seconds
             await asyncio.sleep(min_interval * 3600)
 
-    async def check_and_announce_new_content(self, guild):
-        """Check for new content and announce it"""
-        settings = await self.config.guild(guild).all()
-        channel = guild.get_channel(settings['announcement_channel_id'])
+    def _is_server_configured(self, server):
+        """Check if a server has all required settings"""
+        return all(k in server and server[k] for k in ['name', 'base_url', 'api_key', 'announcement_channel_id'])
+
+    async def check_and_announce_new_content(self, guild, server, guild_settings):
+        """Check for new content and announce it for a specific server"""
+        channel = guild.get_channel(server['announcement_channel_id'])
         if not channel:
             return
             
         # Calculate the time since last check
-        last_check = settings.get('last_check')
+        last_check = server.get('last_check')
         now = datetime.utcnow().timestamp()
         
         # If first time running or not initialized, set last_check to now and mark as initialized
-        if not last_check or not settings.get('initialized', False):
-            await self.config.guild(guild).last_check.set(now)
-            await self.config.guild(guild).initialized.set(True)
+        if not last_check or not server.get('initialized', False):
+            server['last_check'] = now
+            server['initialized'] = True
+            await self._update_server_in_config(guild, server)
             return
             
         # Find new content added since last check
         new_items = await self.get_new_content(
-            settings['base_url'], 
-            settings['api_key'], 
+            server['base_url'], 
+            server['api_key'], 
             last_check
         )
         
         # Update last check time
-        await self.config.guild(guild).last_check.set(now)
+        server['last_check'] = now
+        await self._update_server_in_config(guild, server)
         
         if not new_items:
             return
@@ -95,11 +99,20 @@ class JellyfinNewContent(commands.Cog):
         # Process and announce each new item
         for item in new_items:
             try:
-                await self.announce_item(channel, item, settings)
+                await self.announce_item(channel, item, server, guild_settings)
                 # Add a small delay between messages to avoid rate limits
                 await asyncio.sleep(1)
             except Exception as e:
                 print(f"Error announcing item: {e}")
+
+    async def _update_server_in_config(self, guild, updated_server):
+        """Update a specific server in the config"""
+        servers = await self.config.guild(guild).servers()
+        for i, server in enumerate(servers):
+            if server.get('name') == updated_server.get('name'):
+                servers[i] = updated_server
+                break
+        await self.config.guild(guild).servers.set(servers)
 
     async def get_new_content(self, base_url, api_key, last_check):
         """Get new movies and TV shows added since last check"""
@@ -153,6 +166,41 @@ class JellyfinNewContent(commands.Cog):
         
         return []
 
+    async def translate_text(self, text, deepl_api_key, target_lang="RO"):
+        """Translate text using DeepL API"""
+        if not deepl_api_key or not text:
+            return text
+            
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    data = {
+                        'auth_key': deepl_api_key,
+                        'text': text,
+                        'target_lang': target_lang
+                    }
+                    async with session.post(self.deepl_api_url, data=data) as response:
+                        if response.status == 200:
+                            result = await response.json()
+                            translations = result.get('translations', [])
+                            if translations:
+                                return translations[0].get('text', text)
+                        elif response.status == 456:  # Quota exceeded
+                            print("DeepL quota exceeded, using original text")
+                            return text
+                        else:
+                            print(f"DeepL API error: Status {response.status}")
+            except Exception as e:
+                print(f"Error translating text on attempt {attempt+1}: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+        
+        # If translation fails, return original text
+        return text
+
     async def search_tmdb(self, title, year, is_movie, tmdb_api_key):
         """Search TMDb for additional media info"""
         if not tmdb_api_key:
@@ -161,10 +209,9 @@ class JellyfinNewContent(commands.Cog):
         media_type = "movie" if is_movie else "tv"
         search_url = f"{self.tmdb_base_url}/search/{media_type}?api_key={tmdb_api_key}&query={title}&year={year}"
         
-        timeout = aiohttp.ClientTimeout(total=30)  # 30 seconds total timeout
-        
+        timeout = aiohttp.ClientTimeout(total=30)
         max_retries = 3
-        retry_delay = 2  # seconds
+        retry_delay = 2
         
         for attempt in range(max_retries):
             try:
@@ -195,8 +242,7 @@ class JellyfinNewContent(commands.Cog):
                                     'overview': tmdb_data.get('overview'),
                                     'tmdb_id': tmdb_id
                                 }
-                        elif response.status == 429:  # Too many requests (rate limit)
-                            # Wait longer if rate-limited
+                        elif response.status == 429:
                             await asyncio.sleep(retry_delay * (attempt + 2))
                             continue
                         else:
@@ -208,13 +254,13 @@ class JellyfinNewContent(commands.Cog):
         
         return None
 
-    async def announce_item(self, channel, item, settings):
+    async def announce_item(self, channel, item, server, guild_settings):
         """Create and send an announcement for a new item"""
         title = item.get('Name', 'Unknown Title')
         year = item.get('ProductionYear', 'Unknown Year')
         is_movie = item.get('Type') == "Movie"
         
-        # Determine media type based on Jellyfin Type
+        # Determine media type
         media_type = "Film" if is_movie else "Serial"
         
         # Get initial description from Jellyfin
@@ -222,12 +268,17 @@ class JellyfinNewContent(commands.Cog):
         
         # Search TMDb for poster and description
         tmdb_data = None
-        if 'tmdb_api_key' in settings and settings['tmdb_api_key']:
-            tmdb_data = await self.search_tmdb(title, year, is_movie, settings['tmdb_api_key'])
+        if server.get('tmdb_api_key'):
+            tmdb_data = await self.search_tmdb(title, year, is_movie, server['tmdb_api_key'])
         
         # Use TMDb description if available and not empty
         if tmdb_data and tmdb_data.get('overview'):
             overview = tmdb_data['overview']
+        
+        # Translate description to Romanian using DeepL
+        deepl_key = guild_settings.get('deepl_api_key')
+        if deepl_key and overview and overview != 'No description available.':
+            overview = await self.translate_text(overview, deepl_key, target_lang="RO")
         
         # Limit description length
         if len(overview) > 1000:
@@ -256,8 +307,9 @@ class JellyfinNewContent(commands.Cog):
 
         item_id = item.get('Id')
         if item_id:
-            web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
-            embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
+            web_url = f"{server['base_url']}/web/index.html#!/details?id={item_id}"
+            server_name = server.get('name', 'Server')
+            embed.add_field(name="Vizionare Online:", value=f"[{server_name}]({web_url})", inline=False)
             
         # Add timestamp for when the item was added
         added_date = item.get('DateCreated')
@@ -267,8 +319,9 @@ class JellyfinNewContent(commands.Cog):
             except:
                 pass
         
-        # Send the announcement
-        await channel.send(f"**{media_type} nou adăugat pe Freia:**", embed=embed)
+        # Send the announcement with server name
+        server_name = server.get('name', 'Server')
+        await channel.send(f"**{media_type} nou adăugat pe {server_name}:**", embed=embed)
 
     @commands.group(name="newcontent")
     async def newcontent(self, ctx):
@@ -276,150 +329,279 @@ class JellyfinNewContent(commands.Cog):
         if ctx.invoked_subcommand is None:
             help_text = (
                 "**Comenzi pentru configurarea anunțurilor de conținut nou:**\n\n"
-                f"`{ctx.prefix}newcontent seturl <URL>` - Setează URL-ul serverului Jellyfin\n"
-                f"`{ctx.prefix}newcontent setapi <API_KEY>` - Setează cheia API Jellyfin\n"
-                f"`{ctx.prefix}newcontent settmdb <API_KEY>` - Setează cheia API TMDb pentru postere (opțional)\n"
-                f"`{ctx.prefix}newcontent setchannel <#CANAL>` - Setează canalul pentru anunțuri\n"
-                f"`{ctx.prefix}newcontent setinterval <ORE>` - Setează intervalul de verificare (ore)\n"
-                f"`{ctx.prefix}newcontent settings` - Arată setările curente\n"
-                f"`{ctx.prefix}newcontent check` - Verifică manual conținut nou\n"
-                f"`{ctx.prefix}newcontent reset` - Resetează timestamp-ul de verificare\n"
-                f"`{ctx.prefix}newcontent forceinit` - Forțează inițializarea fără a anunța conținutul existent"
+                "**Gestionare servere:**\n"
+                f"`{ctx.prefix}newcontent addserver <NUME>` - Adaugă un server Jellyfin nou\n"
+                f"`{ctx.prefix}newcontent removeserver <NUME>` - Șterge un server\n"
+                f"`{ctx.prefix}newcontent listservers` - Listează toate serverele\n"
+                f"`{ctx.prefix}newcontent serverinfo <NUME>` - Arată detalii despre un server\n\n"
+                "**Configurare server:**\n"
+                f"`{ctx.prefix}newcontent seturl <NUME> <URL>` - Setează URL-ul serverului\n"
+                f"`{ctx.prefix}newcontent setapi <NUME> <API_KEY>` - Setează cheia API Jellyfin\n"
+                f"`{ctx.prefix}newcontent settmdb <NUME> <API_KEY>` - Setează cheia API TMDb\n"
+                f"`{ctx.prefix}newcontent setchannel <NUME> <#CANAL>` - Setează canalul pentru anunțuri\n\n"
+                "**Configurare globală:**\n"
+                f"`{ctx.prefix}newcontent setdeepl <API_KEY>` - Setează cheia API DeepL pentru traduceri\n"
+                f"`{ctx.prefix}newcontent setinterval <ORE>` - Setează intervalul de verificare\n\n"
+                "**Utilitare:**\n"
+                f"`{ctx.prefix}newcontent check <NUME>` - Verifică manual conținut nou pe un server\n"
+                f"`{ctx.prefix}newcontent reset <NUME>` - Resetează timestamp-ul de verificare\n"
+                f"`{ctx.prefix}newcontent forceinit <NUME>` - Forțează inițializarea fără anunțuri"
             )
             await ctx.send(help_text)
 
+    @newcontent.command(name="addserver")
+    @commands.admin_or_permissions(administrator=True)
+    async def add_server(self, ctx, name: str):
+        """Add a new Jellyfin server"""
+        servers = await self.config.guild(ctx.guild).servers()
+        
+        # Check if server with this name already exists
+        if any(s.get('name') == name for s in servers):
+            return await ctx.send(f"❌ Un server cu numele `{name}` există deja!")
+        
+        # Create new server configuration
+        new_server = {
+            'name': name,
+            'base_url': None,
+            'api_key': None,
+            'tmdb_api_key': None,
+            'announcement_channel_id': None,
+            'last_check': None,
+            'initialized': False
+        }
+        
+        servers.append(new_server)
+        await self.config.guild(ctx.guild).servers.set(servers)
+        await ctx.send(f"✅ Serverul `{name}` a fost adăugat! Acum configurează-l folosind comenzile `seturl`, `setapi`, `settmdb`, și `setchannel`.")
+
+    @newcontent.command(name="removeserver")
+    @commands.admin_or_permissions(administrator=True)
+    async def remove_server(self, ctx, name: str):
+        """Remove a Jellyfin server"""
+        servers = await self.config.guild(ctx.guild).servers()
+        
+        # Find and remove server
+        updated_servers = [s for s in servers if s.get('name') != name]
+        
+        if len(updated_servers) == len(servers):
+            return await ctx.send(f"❌ Nu există niciun server cu numele `{name}`!")
+        
+        await self.config.guild(ctx.guild).servers.set(updated_servers)
+        await ctx.send(f"✅ Serverul `{name}` a fost șters.")
+
+    @newcontent.command(name="listservers")
+    @commands.admin_or_permissions(administrator=True)
+    async def list_servers(self, ctx):
+        """List all configured Jellyfin servers"""
+        servers = await self.config.guild(ctx.guild).servers()
+        
+        if not servers:
+            return await ctx.send("📝 Nu există servere configurate. Folosește `addserver` pentru a adăuga unul.")
+        
+        embed = discord.Embed(
+            title="🎬 Servere Jellyfin Configurate",
+            color=discord.Color.blue()
+        )
+        
+        for server in servers:
+            channel = ctx.guild.get_channel(server.get('announcement_channel_id'))
+            status = "✅ Configurat complet" if self._is_server_configured(server) else "⚠️ Configurare incompletă"
+            
+            value = (
+                f"**Status:** {status}\n"
+                f"**Canal:** {channel.mention if channel else 'Nesetat'}\n"
+                f"**Inițializat:** {'Da' if server.get('initialized') else 'Nu'}"
+            )
+            
+            embed.add_field(
+                name=f"📺 {server['name']}",
+                value=value,
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+
+    @newcontent.command(name="serverinfo")
+    @commands.admin_or_permissions(administrator=True)
+    async def server_info(self, ctx, name: str):
+        """Show detailed information about a server"""
+        servers = await self.config.guild(ctx.guild).servers()
+        server = next((s for s in servers if s.get('name') == name), None)
+        
+        if not server:
+            return await ctx.send(f"❌ Nu există niciun server cu numele `{name}`!")
+        
+        channel = ctx.guild.get_channel(server.get('announcement_channel_id'))
+        
+        last_check_str = "Niciodată"
+        if server.get('last_check'):
+            try:
+                last_check_time = datetime.fromtimestamp(server['last_check'])
+                last_check_str = last_check_time.strftime("%Y-%m-%d %H:%M:%S")
+            except:
+                last_check_str = "Eroare la conversie"
+        
+        embed = discord.Embed(
+            title=f"📺 Informații Server: {name}",
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name="URL Server",
+            value=server.get('base_url') or "Nesetat",
+            inline=False
+        )
+        embed.add_field(
+            name="API Key Jellyfin",
+            value="Setat ✓" if server.get('api_key') else "Nesetat ✗",
+            inline=True
+        )
+        embed.add_field(
+            name="API Key TMDb",
+            value="Setat ✓" if server.get('tmdb_api_key') else "Nesetat ✗",
+            inline=True
+        )
+        embed.add_field(
+            name="Canal Anunțuri",
+            value=channel.mention if channel else "Nesetat",
+            inline=False
+        )
+        embed.add_field(
+            name="Ultima Verificare",
+            value=last_check_str,
+            inline=True
+        )
+        embed.add_field(
+            name="Inițializat",
+            value="Da ✓" if server.get('initialized') else "Nu ✗",
+            inline=True
+        )
+        
+        await ctx.send(embed=embed)
+
     @newcontent.command(name="seturl")
     @commands.admin_or_permissions(administrator=True)
-    async def set_url(self, ctx, url: str):
+    async def set_url(self, ctx, name: str, url: str):
         """Set the Jellyfin server URL"""
+        servers = await self.config.guild(ctx.guild).servers()
+        server = next((s for s in servers if s.get('name') == name), None)
+        
+        if not server:
+            return await ctx.send(f"❌ Nu există niciun server cu numele `{name}`!")
+        
         url = url.rstrip('/')
-        await self.config.guild(ctx.guild).base_url.set(url)
-        await ctx.send(f"URL-ul serverului Jellyfin a fost setat la: {url}")
+        server['base_url'] = url
+        await self._update_server_in_config(ctx.guild, server)
+        await ctx.send(f"✅ URL-ul pentru serverul `{name}` a fost setat la: {url}")
 
     @newcontent.command(name="setapi")
     @commands.admin_or_permissions(administrator=True)
-    async def set_api(self, ctx, api_key: str):
+    async def set_api(self, ctx, name: str, api_key: str):
         """Set the Jellyfin API key"""
-        await self.config.guild(ctx.guild).api_key.set(api_key)
-        await ctx.send("Cheia API Jellyfin a fost setată.")
+        servers = await self.config.guild(ctx.guild).servers()
+        server = next((s for s in servers if s.get('name') == name), None)
+        
+        if not server:
+            return await ctx.send(f"❌ Nu există niciun server cu numele `{name}`!")
+        
+        server['api_key'] = api_key
+        await self._update_server_in_config(ctx.guild, server)
+        await ctx.send(f"✅ Cheia API Jellyfin pentru serverul `{name}` a fost setată.")
         await ctx.message.delete()
 
     @newcontent.command(name="settmdb")
     @commands.admin_or_permissions(administrator=True)
-    async def set_tmdb(self, ctx, api_key: str):
-        """Set the TMDb API key for posters and descriptions"""
-        await self.config.guild(ctx.guild).tmdb_api_key.set(api_key)
-        await ctx.send("Cheia API TMDb pentru postere și descrieri a fost setată.")
+    async def set_tmdb(self, ctx, name: str, api_key: str):
+        """Set the TMDb API key for a server"""
+        servers = await self.config.guild(ctx.guild).servers()
+        server = next((s for s in servers if s.get('name') == name), None)
+        
+        if not server:
+            return await ctx.send(f"❌ Nu există niciun server cu numele `{name}`!")
+        
+        server['tmdb_api_key'] = api_key
+        await self._update_server_in_config(ctx.guild, server)
+        await ctx.send(f"✅ Cheia API TMDb pentru serverul `{name}` a fost setată.")
         await ctx.message.delete()
 
     @newcontent.command(name="setchannel")
     @commands.admin_or_permissions(administrator=True)
-    async def set_channel(self, ctx, channel: discord.TextChannel):
-        """Set the channel for new content announcements"""
-        await self.config.guild(ctx.guild).announcement_channel_id.set(channel.id)
-        await ctx.send(f"Canalul pentru anunțuri de conținut nou a fost setat la: {channel.mention}")
+    async def set_channel(self, ctx, name: str, channel: discord.TextChannel):
+        """Set the announcement channel for a server"""
+        servers = await self.config.guild(ctx.guild).servers()
+        server = next((s for s in servers if s.get('name') == name), None)
+        
+        if not server:
+            return await ctx.send(f"❌ Nu există niciun server cu numele `{name}`!")
+        
+        server['announcement_channel_id'] = channel.id
+        await self._update_server_in_config(ctx.guild, server)
+        await ctx.send(f"✅ Canalul pentru anunțuri pe serverul `{name}` a fost setat la: {channel.mention}")
+
+    @newcontent.command(name="setdeepl")
+    @commands.admin_or_permissions(administrator=True)
+    async def set_deepl(self, ctx, api_key: str):
+        """Set the DeepL API key for translations"""
+        await self.config.guild(ctx.guild).deepl_api_key.set(api_key)
+        await ctx.send("✅ Cheia API DeepL pentru traduceri a fost setată.")
+        await ctx.message.delete()
 
     @newcontent.command(name="setinterval")
     @commands.admin_or_permissions(administrator=True)
     async def set_interval(self, ctx, hours: int):
         """Set how often to check for new content (in hours)"""
         if hours < 1:
-            return await ctx.send("Intervalul trebuie să fie de cel puțin 1 oră.")
+            return await ctx.send("❌ Intervalul trebuie să fie de cel puțin 1 oră.")
         await self.config.guild(ctx.guild).check_interval.set(hours)
-        await ctx.send(f"Intervalul de verificare a fost setat la {hours} ore.")
-
-    @newcontent.command(name="settings")
-    @commands.admin_or_permissions(administrator=True)
-    async def show_settings(self, ctx):
-        """Show current new content announcements settings"""
-        settings = await self.config.guild(ctx.guild).all()
-        channel = ctx.guild.get_channel(settings['announcement_channel_id']) if settings['announcement_channel_id'] else None
-        
-        last_check_str = "Niciodată"
-        if settings.get('last_check'):
-            try:
-                last_check_time = datetime.fromtimestamp(settings['last_check'])
-                last_check_str = last_check_time.strftime("%Y-%m-%d %H:%M:%S")
-            except:
-                last_check_str = "Eroare la conversie"
-        
-        embed = discord.Embed(
-            title="Setări Anunțuri Conținut Nou Jellyfin",
-            color=discord.Color.green()
-        )
-        embed.add_field(
-            name="URL Server", 
-            value=settings['base_url'] or "Nesetat",
-            inline=False
-        )
-        embed.add_field(
-            name="API Key Jellyfin", 
-            value="Setat ✓" if settings['api_key'] else "Nesetat ✗",
-            inline=False
-        )
-        embed.add_field(
-            name="API Key TMDb", 
-            value="Setat ✓" if settings.get('tmdb_api_key') else "Nesetat ✗",
-            inline=False
-        )
-        embed.add_field(
-            name="Canal Anunțuri", 
-            value=channel.mention if channel else "Nesetat",
-            inline=False
-        )
-        embed.add_field(
-            name="Interval Verificare", 
-            value=f"{settings.get('check_interval', 6)} ore",
-            inline=False
-        )
-        embed.add_field(
-            name="Ultima Verificare", 
-            value=last_check_str,
-            inline=False
-        )
-        embed.add_field(
-            name="Inițializat", 
-            value="Da ✓" if settings.get('initialized', False) else "Nu ✗",
-            inline=False
-        )
-        
-        await ctx.send(embed=embed)
+        await ctx.send(f"✅ Intervalul de verificare a fost setat la {hours} ore.")
 
     @newcontent.command(name="check")
     @commands.admin_or_permissions(administrator=True)
-    async def manual_check(self, ctx):
-        """Manually check for new content"""
-        settings = await self.config.guild(ctx.guild).all()
-        if not all(k in settings and settings[k] for k in ['base_url', 'api_key', 'announcement_channel_id']):
-            help_msg = (
-                "⚠️ Configurarea nu este completă. Folosește următoarele comenzi pentru a seta totul:\n\n"
-                f"`{ctx.prefix}newcontent seturl <URL>` - Setează URL-ul serverului Jellyfin\n"
-                f"`{ctx.prefix}newcontent setapi <API_KEY>` - Setează cheia API Jellyfin\n"
-                f"`{ctx.prefix}newcontent setchannel <#CANAL>` - Setează canalul pentru anunțuri\n\n"
-                f"Poți verifica setările curente folosind `{ctx.prefix}newcontent settings`"
-            )
-            return await ctx.send(help_msg)
-            
-        await ctx.send("Verificare pentru conținut nou în desfășurare...")
+    async def manual_check(self, ctx, name: str):
+        """Manually check for new content on a specific server"""
+        servers = await self.config.guild(ctx.guild).servers()
+        server = next((s for s in servers if s.get('name') == name), None)
+        
+        if not server:
+            return await ctx.send(f"❌ Nu există niciun server cu numele `{name}`!")
+        
+        if not self._is_server_configured(server):
+            return await ctx.send(f"⚠️ Serverul `{name}` nu este configurat complet. Verifică cu `serverinfo {name}`.")
+        
+        guild_settings = await self.config.guild(ctx.guild).all()
+        await ctx.send(f"🔍 Verificare pentru conținut nou pe `{name}` în desfășurare...")
         try:
-            await self.check_and_announce_new_content(ctx.guild)
-            await ctx.send("Verificare completă.")
+            await self.check_and_announce_new_content(ctx.guild, server, guild_settings)
+            await ctx.send("✅ Verificare completă.")
         except Exception as e:
-            await ctx.send(f"Eroare în timpul verificării: {e}")
+            await ctx.send(f"❌ Eroare în timpul verificării: {e}")
 
     @newcontent.command(name="reset")
     @commands.admin_or_permissions(administrator=True)
-    async def reset_timestamp(self, ctx):
-        """Reset the last check timestamp to force a fresh check"""
-        await self.config.guild(ctx.guild).last_check.set(None)
-        await self.config.guild(ctx.guild).initialized.set(False)
-        await ctx.send("Timestamp-ul de verificare a fost resetat. Următoarea verificare va include tot conținutul disponibil.")
+    async def reset_timestamp(self, ctx, name: str):
+        """Reset the last check timestamp for a server"""
+        servers = await self.config.guild(ctx.guild).servers()
+        server = next((s for s in servers if s.get('name') == name), None)
         
+        if not server:
+            return await ctx.send(f"❌ Nu există niciun server cu numele `{name}`!")
+        
+        server['last_check'] = None
+        server['initialized'] = False
+        await self._update_server_in_config(ctx.guild, server)
+        await ctx.send(f"✅ Timestamp-ul pentru serverul `{name}` a fost resetat.")
+
     @newcontent.command(name="forceinit")
     @commands.admin_or_permissions(administrator=True)
-    async def force_init(self, ctx):
-        """Force the plugin to initialize without announcing existing content"""
+    async def force_init(self, ctx, name: str):
+        """Force initialization for a server without announcing existing content"""
+        servers = await self.config.guild(ctx.guild).servers()
+        server = next((s for s in servers if s.get('name') == name), None)
+        
+        if not server:
+            return await ctx.send(f"❌ Nu există niciun server cu numele `{name}`!")
+        
         now = datetime.utcnow().timestamp()
-        await self.config.guild(ctx.guild).last_check.set(now)
-        await self.config.guild(ctx.guild).initialized.set(True)
-        await ctx.send("Plugin-ul a fost inițializat fără a anunța conținutul existent. Doar conținutul nou adăugat va fi anunțat de acum înainte.")
+        server['last_check'] = now
+        server['initialized'] = True
+        await self._update_server_in_config(ctx.guild, server)
+        await ctx.send(f"✅ Serverul `{name}` a fost inițializat fără a anunța conținutul existent.")
