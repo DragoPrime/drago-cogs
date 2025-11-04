@@ -3,6 +3,7 @@ import asyncio
 import aiohttp
 import discord
 from datetime import datetime, timedelta
+from deep_translator import GoogleTranslator
 
 class JellyfinNewContent(commands.Cog):
     """Announces new movies and TV shows added to multiple Jellyfin servers"""
@@ -18,15 +19,14 @@ class JellyfinNewContent(commands.Cog):
         # Default settings - now using servers list
         default_guild = {
             "servers": [],  # List of server configurations
-            "deepl_api_key": None,  # DeepL API key for translations
             "check_interval": 6,  # Hours between checks
+            "enable_translation": True,  # Enable automatic translation
         }
         
         self.config.register_guild(**default_guild)
         self.bg_task = None
         self.tmdb_base_url = "https://api.themoviedb.org/3"
         self.poster_base_url = "https://image.tmdb.org/t/p/w500"
-        self.deepl_api_url = "https://api-free.deepl.com/v2/translate"  # Use api.deepl.com for paid plans
         self.start_tasks()
 
     def start_tasks(self):
@@ -166,33 +166,21 @@ class JellyfinNewContent(commands.Cog):
         
         return []
 
-    async def translate_text(self, text, deepl_api_key, target_lang="RO"):
-        """Translate text using DeepL API"""
-        if not deepl_api_key or not text:
+    async def translate_text(self, text, target_lang="ro"):
+        """Translate text using Google Translate via deep-translator"""
+        if not text or text == 'No description available.':
             return text
-            
+        
         max_retries = 3
         retry_delay = 2
         
         for attempt in range(max_retries):
             try:
-                async with aiohttp.ClientSession() as session:
-                    data = {
-                        'auth_key': deepl_api_key,
-                        'text': text,
-                        'target_lang': target_lang
-                    }
-                    async with session.post(self.deepl_api_url, data=data) as response:
-                        if response.status == 200:
-                            result = await response.json()
-                            translations = result.get('translations', [])
-                            if translations:
-                                return translations[0].get('text', text)
-                        elif response.status == 456:  # Quota exceeded
-                            print("DeepL quota exceeded, using original text")
-                            return text
-                        else:
-                            print(f"DeepL API error: Status {response.status}")
+                # Run translation in executor to avoid blocking
+                loop = asyncio.get_event_loop()
+                translator = GoogleTranslator(source='auto', target=target_lang)
+                translated = await loop.run_in_executor(None, translator.translate, text)
+                return translated
             except Exception as e:
                 print(f"Error translating text on attempt {attempt+1}: {e}")
                 if attempt < max_retries - 1:
@@ -275,10 +263,10 @@ class JellyfinNewContent(commands.Cog):
         if tmdb_data and tmdb_data.get('overview'):
             overview = tmdb_data['overview']
         
-        # Translate description to Romanian using DeepL
-        deepl_key = guild_settings.get('deepl_api_key')
-        if deepl_key and overview and overview != 'No description available.':
-            overview = await self.translate_text(overview, deepl_key, target_lang="RO")
+        # Translate description to Romanian using Google Translate
+        enable_translation = guild_settings.get('enable_translation', True)
+        if enable_translation and overview and overview != 'No description available.':
+            overview = await self.translate_text(overview, target_lang="ro")
         
         # Limit description length
         if len(overview) > 1000:
@@ -339,9 +327,11 @@ class JellyfinNewContent(commands.Cog):
                 f"`{ctx.prefix}newcontent setapi <NUME> <API_KEY>` - Setează cheia API Jellyfin\n"
                 f"`{ctx.prefix}newcontent settmdb <NUME> <API_KEY>` - Setează cheia API TMDb\n"
                 f"`{ctx.prefix}newcontent setchannel <NUME> <#CANAL>` - Setează canalul pentru anunțuri\n\n"
+                "**Configurare traducere:**\n"
+                f"`{ctx.prefix}newcontent toggletranslation` - Activează/dezactivează traducerea automată\n\n"
                 "**Configurare globală:**\n"
-                f"`{ctx.prefix}newcontent setdeepl <API_KEY>` - Setează cheia API DeepL pentru traduceri\n"
-                f"`{ctx.prefix}newcontent setinterval <ORE>` - Setează intervalul de verificare\n\n"
+                f"`{ctx.prefix}newcontent setinterval <ORE>` - Setează intervalul de verificare\n"
+                f"`{ctx.prefix}newcontent settings` - Arată setările globale\n\n"
                 "**Utilitare:**\n"
                 f"`{ctx.prefix}newcontent check <NUME>` - Verifică manual conținut nou pe un server\n"
                 f"`{ctx.prefix}newcontent reset <NUME>` - Resetează timestamp-ul de verificare\n"
@@ -537,13 +527,15 @@ class JellyfinNewContent(commands.Cog):
         await self._update_server_in_config(ctx.guild, server)
         await ctx.send(f"✅ Canalul pentru anunțuri pe serverul `{name}` a fost setat la: {channel.mention}")
 
-    @newcontent.command(name="setdeepl")
+    @newcontent.command(name="toggletranslation")
     @commands.admin_or_permissions(administrator=True)
-    async def set_deepl(self, ctx, api_key: str):
-        """Set the DeepL API key for translations"""
-        await self.config.guild(ctx.guild).deepl_api_key.set(api_key)
-        await ctx.send("✅ Cheia API DeepL pentru traduceri a fost setată.")
-        await ctx.message.delete()
+    async def toggle_translation(self, ctx):
+        """Toggle automatic translation on/off"""
+        current = await self.config.guild(ctx.guild).enable_translation()
+        new_value = not current
+        await self.config.guild(ctx.guild).enable_translation.set(new_value)
+        status = "activată" if new_value else "dezactivată"
+        await ctx.send(f"✅ Traducerea automată a fost {status}.")
 
     @newcontent.command(name="setinterval")
     @commands.admin_or_permissions(administrator=True)
@@ -553,6 +545,34 @@ class JellyfinNewContent(commands.Cog):
             return await ctx.send("❌ Intervalul trebuie să fie de cel puțin 1 oră.")
         await self.config.guild(ctx.guild).check_interval.set(hours)
         await ctx.send(f"✅ Intervalul de verificare a fost setat la {hours} ore.")
+
+    @newcontent.command(name="settings")
+    @commands.admin_or_permissions(administrator=True)
+    async def show_settings(self, ctx):
+        """Show current global settings"""
+        settings = await self.config.guild(ctx.guild).all()
+        
+        embed = discord.Embed(
+            title="⚙️ Setări Globale",
+            color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="Interval Verificare",
+            value=f"{settings.get('check_interval', 6)} ore",
+            inline=True
+        )
+        embed.add_field(
+            name="Traducere Automată",
+            value="Activată ✓" if settings.get('enable_translation', True) else "Dezactivată ✗",
+            inline=True
+        )
+        embed.add_field(
+            name="Număr Servere",
+            value=str(len(settings.get('servers', []))),
+            inline=True
+        )
+        
+        await ctx.send(embed=embed)
 
     @newcontent.command(name="check")
     @commands.admin_or_permissions(administrator=True)
