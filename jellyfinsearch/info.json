@@ -3,7 +3,7 @@
     "short": "Search for content on your Jellyfin server with TMDB integration",
     "description": "A cog that allows users to search for content on a Jellyfin server directly from Discord. Includes detailed media information from TMDB and direct playback links.",
     "end_user_data_statement": "This cog does not store any user data.",
-    "author": ["DragoPrime"],
+    "author": ["Drago Prime"],
     "required_cogs": {},
     "requirements": ["aiohttp"],
     "tags": ["jellyfin", "media", "search", "tmdb"],
