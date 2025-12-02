@@ -3,7 +3,7 @@ import aiohttp
 import json
 import logging
 from typing import Dict, Any, Optional, Union, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import discord
 from redbot.core import commands, Config, checks
@@ -18,7 +18,7 @@ class JellyfinCog(commands.Cog):
     
     def __init__(self, bot: Red):
         self.bot = bot
-        self.config = Config.get_conf(self, identifier=1245567290)
+        self.config = Config.get_conf(self, identifier=1234567890)
         
         default_global = {
             "servers": {},
@@ -108,7 +108,10 @@ class JellyfinCog(commands.Cog):
                                 user_data = await user_resp.json()
                                 last_activity_str = user_data.get("LastActivityDate")
                                 if last_activity_str:
-                                    return datetime.fromisoformat(last_activity_str.replace("Z", "+00:00"))
+                                    # Convertește la datetime cu timezone UTC
+                                    dt = datetime.fromisoformat(last_activity_str.replace("Z", "+00:00"))
+                                    # Convertește la datetime naive (fără timezone)
+                                    return dt.replace(tzinfo=None)
                     return None
         except Exception as e:
             log.error(f"Eroare la obținerea ultimei activități: {e}")
@@ -189,8 +192,16 @@ class JellyfinCog(commands.Cog):
                     
                     if not last_activity:
                         # Dacă nu putem obține activitatea, folosim data creării
-                        created_at = datetime.fromisoformat(user_data["created_at"])
-                        last_activity = created_at
+                        created_at_str = user_data.get("created_at")
+                        if created_at_str:
+                            # Parse datetime și elimină timezone info pentru consistență
+                            created_at = datetime.fromisoformat(created_at_str)
+                            if created_at.tzinfo is not None:
+                                created_at = created_at.replace(tzinfo=None)
+                            last_activity = created_at
+                        else:
+                            # Dacă nu avem nici data creării, skip
+                            continue
                     
                     # Verifică dacă trebuie șters (60+ zile)
                     if last_activity <= sixty_days_ago and current_status != "deleted":
