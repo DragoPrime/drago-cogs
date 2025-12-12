@@ -1,0 +1,16 @@
+{
+    "author": ["TineNume"],
+    "description": "Monitorizează IP-ul public al bot-ului și trimite notificări automate când acesta se schimbă. Suportă notificări prin DM sau în canal.",
+    "install_msg": "Mulțumesc pentru instalarea IPMonitor! Folosește `[p]ipmonitor setuser @utilizator` pentru a configura notificările.\n\nPentru mai multe informații, folosește `[p]help ipmonitor`.",
+    "short": "Monitorizează și notifică schimbările de IP ale bot-ului",
+    "tags": ["ip", "monitor", "notification", "network", "tools", "utility"],
+    "type": "COG",
+    "end_user_data_statement": "This cog stores user IDs and channel IDs for notification purposes. No other end user data is stored.",
+    "min_bot_version": "3.5.0",
+    "max_bot_version": "3.5.99",
+    "hidden": false,
+    "disabled": false,
+    "required_cogs": {},
+    "requirements": ["aiohttp"],
+    "permissions": ["send_messages", "embed_links"]
+}
