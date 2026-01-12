@@ -90,8 +90,18 @@ class JellyfinCog(commands.Cog):
             return None
     
     async def _get_user_last_activity(self, server_url: str, token: str, user_id: str) -> Optional[datetime]:
-        """Obține ultima activitate a unui utilizator"""
-        activity_url = f"{server_url}/Users/{user_id}/Items/Latest"
+        """Obține ultima activitate a unui utilizator (ultima vizionare)"""
+        # Încearcă să obțină ultimele items vizionate
+        items_url = f"{server_url}/Users/{user_id}/Items"
+        
+        params = {
+            "SortBy": "DatePlayed",
+            "SortOrder": "Descending",
+            "Limit": "1",
+            "Filters": "IsPlayed",
+            "Recursive": "true",
+            "Fields": "DateLastSaved"
+        }
         
         headers = {
             "X-MediaBrowser-Token": token
@@ -99,22 +109,35 @@ class JellyfinCog(commands.Cog):
         
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(activity_url, headers=headers, timeout=10) as resp:
+                # Încearcă să obțină ultimul item vizionat
+                async with session.get(items_url, params=params, headers=headers, timeout=10) as resp:
                     if resp.status == 200:
-                        # Obține informații despre utilizator pentru LastActivityDate
-                        user_url = f"{server_url}/Users/{user_id}"
-                        async with session.get(user_url, headers=headers, timeout=10) as user_resp:
-                            if user_resp.status == 200:
-                                user_data = await user_resp.json()
-                                last_activity_str = user_data.get("LastActivityDate")
-                                if last_activity_str:
-                                    # Convertește la datetime cu timezone UTC
-                                    dt = datetime.fromisoformat(last_activity_str.replace("Z", "+00:00"))
-                                    # Convertește la datetime naive (fără timezone)
-                                    return dt.replace(tzinfo=None)
-                    return None
+                        data = await resp.json()
+                        items = data.get("Items", [])
+                        if items and len(items) > 0:
+                            # Caută UserData pentru DateLastSaved
+                            user_data = items[0].get("UserData", {})
+                            last_played_str = user_data.get("LastPlayedDate")
+                            
+                            if last_played_str:
+                                # Convertește la datetime naive
+                                dt = datetime.fromisoformat(last_played_str.replace("Z", "+00:00"))
+                                return dt.replace(tzinfo=None)
+                
+                # Dacă nu găsim activitate de playback, verificăm când s-a creat utilizatorul
+                user_url = f"{server_url}/Users/{user_id}"
+                async with session.get(user_url, headers=headers, timeout=10) as user_resp:
+                    if user_resp.status == 200:
+                        user_info = await user_resp.json()
+                        # Folosim LastLoginDate sau LastActivityDate ca fallback
+                        last_login_str = user_info.get("LastLoginDate") or user_info.get("LastActivityDate")
+                        if last_login_str:
+                            dt = datetime.fromisoformat(last_login_str.replace("Z", "+00:00"))
+                            return dt.replace(tzinfo=None)
+                
+                return None
         except Exception as e:
-            log.error(f"Eroare la obținerea ultimei activități: {e}")
+            log.error(f"Eroare la obținerea ultimei activități pentru user {user_id}: {e}")
             return None
     
     async def _disable_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
