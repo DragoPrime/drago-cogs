@@ -135,65 +135,6 @@ class JellyfinCog(commands.Cog):
                             dt = datetime.fromisoformat(last_login_str.replace("Z", "+00:00"))
                             return dt.replace(tzinfo=None)
                 
-    async def _get_user_last_activity(self, server_url: str, token: str, user_id: str) -> Optional[datetime]:
-        """Obține ultima activitate a unui utilizator (ultima vizionare)"""
-        log.debug(f"    [API] Obțin activitatea pentru user_id={user_id}")
-        
-        # Încearcă să obțină ultimele items vizionate
-        items_url = f"{server_url}/Users/{user_id}/Items"
-        
-        params = {
-            "SortBy": "DatePlayed",
-            "SortOrder": "Descending",
-            "Limit": "1",
-            "Filters": "IsPlayed",
-            "Recursive": "true",
-            "Fields": "DateLastSaved"
-        }
-        
-        headers = {
-            "X-MediaBrowser-Token": token
-        }
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                # Încearcă să obțină ultimul item vizionat
-                async with session.get(items_url, params=params, headers=headers, timeout=10) as resp:
-                    log.info(f"    API call: GET {items_url} - Status: {resp.status}")
-                    if resp.status == 200:
-                        data = await resp.json()
-                        items = data.get("Items", [])
-                        log.info(f"    - Găsite {len(items)} items vizionate")
-                        
-                        if items and len(items) > 0:
-                            # Caută UserData pentru DateLastSaved
-                            user_data = items[0].get("UserData", {})
-                            last_played_str = user_data.get("LastPlayedDate")
-                            
-                            log.info(f"    - LastPlayedDate din primul item: {last_played_str}")
-                            
-                            if last_played_str:
-                                # Convertește la datetime naive
-                                dt = datetime.fromisoformat(last_played_str.replace("Z", "+00:00"))
-                                result = dt.replace(tzinfo=None)
-                                log.info(f"    → Ultima vizionare: {result.strftime('%Y-%m-%d %H:%M:%S')}")
-                                return result
-                        else:
-                            log.info("  - Nu există items vizionate în istoric")
-                
-                # Dacă nu găsim activitate de playback, verificăm când s-a creat utilizatorul
-                user_url = f"{server_url}/Users/{user_id}"
-                async with session.get(user_url, headers=headers, timeout=10) as user_resp:
-                    if user_resp.status == 200:
-                        user_info = await user_resp.json()
-                        # Folosim LastLoginDate sau LastActivityDate ca fallback
-                        last_login_str = user_info.get("LastLoginDate") or user_info.get("LastActivityDate")
-                        if last_login_str:
-                            dt = datetime.fromisoformat(last_login_str.replace("Z", "+00:00"))
-                            log.info(f"  - Folosim LastLoginDate/LastActivityDate ca fallback: {dt.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')}")
-                            return dt.replace(tzinfo=None)
-                
-                log.warning(f"  - Nu s-a găsit nicio dată de activitate pentru user {user_id}")
                 return None
         except Exception as e:
             log.error(f"Eroare la obținerea ultimei activități pentru user {user_id}: {e}")
@@ -201,7 +142,6 @@ class JellyfinCog(commands.Cog):
     
     async def _disable_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
         """Dezactivează un utilizator Jellyfin"""
-        log.info(f"    [API] Dezactivare utilizator {user_id}")
         disable_url = f"{server_url}/Users/{user_id}/Policy"
         
         # Obține politica actuală
@@ -210,28 +150,20 @@ class JellyfinCog(commands.Cog):
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(disable_url, headers=headers, timeout=10) as resp:
-                    log.info(f"    API call: GET {disable_url} - Status: {resp.status}")
                     if resp.status == 200:
                         policy = await resp.json()
-                        log.info(f"    - Policy curent: IsDisabled={policy.get('IsDisabled')}")
                         policy["IsDisabled"] = True
                         
                         # Actualizează politica
                         async with session.post(disable_url, json=policy, headers=headers, timeout=10) as update_resp:
-                            log.info(f"    API call: POST {disable_url} - Status: {update_resp.status}")
-                            success = update_resp.status == 204 or update_resp.status == 200
-                            log.info(f"    - Rezultat dezactivare: {'✅ SUCCESS' if success else '❌ FAILED'}")
-                            return success
-                    else:
-                        log.error(f"    - Eroare la obținerea policy-ului: status {resp.status}")
+                            return update_resp.status == 204
         except Exception as e:
-            log.error(f"    - Excepție la dezactivarea utilizatorului: {e}")
+            log.error(f"Eroare la dezactivarea utilizatorului: {e}")
         
         return False
     
     async def _delete_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
         """Șterge un utilizator Jellyfin"""
-        log.info(f"    [API] Ștergere utilizator {user_id}")
         delete_url = f"{server_url}/Users/{user_id}"
         
         headers = {"X-MediaBrowser-Token": token}
@@ -239,47 +171,27 @@ class JellyfinCog(commands.Cog):
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.delete(delete_url, headers=headers, timeout=10) as resp:
-                    log.info(f"    API call: DELETE {delete_url} - Status: {resp.status}")
-                    success = resp.status == 204 or resp.status == 200
-                    log.info(f"    - Rezultat ștergere: {'✅ SUCCESS' if success else '❌ FAILED'}")
-                    return success
+                    return resp.status == 204
         except Exception as e:
-            log.error(f"    - Excepție la ștergerea utilizatorului: {e}")
+            log.error(f"Eroare la ștergerea utilizatorului: {e}")
         
         return False
     
     async def _check_inactive_users(self):
         """Verifică utilizatorii inactivi și îi gestionează"""
-        log.info("===== ÎNCEPE VERIFICAREA UTILIZATORILOR INACTIVI =====")
         servers = await self.config.servers()
         users = await self.config.users()
-        
-        log.info(f"Servere configurate: {len(servers)}")
-        log.info(f"Utilizatori în tracking: {len(users)}")
         
         now = datetime.now()
         thirty_days_ago = now - timedelta(days=30)
         sixty_days_ago = now - timedelta(days=60)
         
-        log.info(f"Data curentă: {now.strftime('%Y-%m-%d %H:%M:%S')}")
-        log.info(f"Limită 30 zile: {thirty_days_ago.strftime('%Y-%m-%d %H:%M:%S')}")
-        log.info(f"Limită 60 zile: {sixty_days_ago.strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        total_checked = 0
-        total_disabled = 0
-        total_deleted = 0
-        
         for discord_user_id, user_servers in users.items():
-            log.info(f"\n--- Verificare utilizator Discord ID: {discord_user_id} ---")
-            
             for server_name, server_users in user_servers.items():
                 if server_name not in servers:
-                    log.warning(f"Server '{server_name}' nu mai există în configurație, skip")
                     continue
                 
-                log.info(f"Verificare server: {server_name}")
                 server_config = servers[server_name]
-                
                 token = await self._get_jellyfin_auth_token(
                     server_config["url"],
                     server_config["admin_user"],
@@ -287,28 +199,16 @@ class JellyfinCog(commands.Cog):
                 )
                 
                 if not token:
-                    log.error(f"Nu s-a putut obține token pentru server '{server_name}'")
                     continue
                 
-                log.info(f"Token obținut cu succes pentru {server_name}")
-                
                 for jellyfin_username, user_data in server_users.items():
-                    total_checked += 1
                     jellyfin_id = user_data.get("jellyfin_id")
                     current_status = user_data.get("status", "active")
-                    created_at_str = user_data.get("created_at", "")
-                    
-                    log.info(f"\n  Utilizator Jellyfin: {jellyfin_username}")
-                    log.info(f"  - ID Jellyfin: {jellyfin_id}")
-                    log.info(f"  - Status curent: {current_status}")
-                    log.info(f"  - Creat la: {created_at_str}")
                     
                     if not jellyfin_id:
-                        log.warning(f"  - Lipsește jellyfin_id, skip")
                         continue
                     
                     # Obține ultima activitate
-                    log.info(f"  - Obțin ultima activitate...")
                     last_activity = await self._get_user_last_activity(
                         server_config["url"], token, jellyfin_id
                     )
@@ -322,66 +222,41 @@ class JellyfinCog(commands.Cog):
                             if created_at.tzinfo is not None:
                                 created_at = created_at.replace(tzinfo=None)
                             last_activity = created_at
-                            log.info(f"  - Nu s-a găsit activitate, folosim data creării: {last_activity.strftime('%Y-%m-%d %H:%M:%S')}")
                         else:
                             # Dacă nu avem nici data creării, skip
-                            log.warning(f"  - Nu există nici data creării, skip")
                             continue
-                    else:
-                        log.info(f"  - Ultima activitate găsită: {last_activity.strftime('%Y-%m-%d %H:%M:%S')}")
-                    
-                    days_inactive = (now - last_activity).days
-                    log.info(f"  - Zile inactive: {days_inactive}")
                     
                     # Verifică dacă trebuie șters (60+ zile)
                     if last_activity <= sixty_days_ago and current_status != "deleted":
-                        log.warning(f"  - ACȚIUNE: Utilizatorul trebuie ȘTERS (60+ zile)")
                         success = await self._delete_jellyfin_user(
                             server_config["url"], token, jellyfin_id
                         )
                         
                         if success:
-                            log.info(f"  - ✅ Utilizator șters cu succes")
                             # Actualizează statusul
                             user_data["status"] = "deleted"
                             await self.config.users.set(users)
-                            total_deleted += 1
                             
                             # Trimite notificare
                             await self._send_cleanup_notification(
                                 server_name, jellyfin_username, discord_user_id, "deleted", last_activity
                             )
-                        else:
-                            log.error(f"  - ❌ Eroare la ștergerea utilizatorului")
                     
                     # Verifică dacă trebuie dezactivat (30+ zile)
                     elif last_activity <= thirty_days_ago and current_status == "active":
-                        log.warning(f"  - ACȚIUNE: Utilizatorul trebuie DEZACTIVAT (30+ zile)")
                         success = await self._disable_jellyfin_user(
                             server_config["url"], token, jellyfin_id
                         )
                         
                         if success:
-                            log.info(f"  - ✅ Utilizator dezactivat cu succes")
                             # Actualizează statusul
                             user_data["status"] = "disabled"
                             await self.config.users.set(users)
-                            total_disabled += 1
                             
                             # Trimite notificare
                             await self._send_cleanup_notification(
                                 server_name, jellyfin_username, discord_user_id, "disabled", last_activity
                             )
-                        else:
-                            log.error(f"  - ❌ Eroare la dezactivarea utilizatorului")
-                    else:
-                        log.info(f"  - ✓ Utilizator OK, nu necesită acțiuni")
-        
-        log.info("\n===== VERIFICARE COMPLETATĂ =====")
-        log.info(f"Total utilizatori verificați: {total_checked}")
-        log.info(f"Utilizatori dezactivați: {total_disabled}")
-        log.info(f"Utilizatori șterși: {total_deleted}")
-        log.info("==================================\n")
     
     async def _send_cleanup_notification(self, server_name: str, jellyfin_username: str, discord_user_id: int, action: str, last_activity: datetime):
         """Trimite notificare despre acțiunea de cleanup"""
