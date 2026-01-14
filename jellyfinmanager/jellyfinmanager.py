@@ -140,42 +140,42 @@ class JellyfinCog(commands.Cog):
             log.error(f"Eroare la obținerea ultimei activități pentru user {user_id}: {e}")
             return None
     
-async def _disable_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
-    """Dezactivează un utilizator Jellyfin"""
-    disable_url = f"{server_url}/Users/{user_id}/Policy"
+    async def _disable_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
+        """Dezactivează un utilizator Jellyfin"""
+        disable_url = f"{server_url}/Users/{user_id}/Policy"
     
-    # Obține politica actuală
-    headers = {"X-MediaBrowser-Token": token}
+        # Obține politica actuală
+        headers = {"X-MediaBrowser-Token": token}
     
-    try:
-        async with aiohttp.ClientSession() as session:
-            log.info(f"Obținere politică pentru user {user_id} de la {disable_url}")
-            async with session.get(disable_url, headers=headers, timeout=10) as resp:
-                log.info(f"Status GET policy: {resp.status}")
-                if resp.status == 200:
-                    policy = await resp.json()
-                    log.info(f"Politică obținută, IsDisabled curent: {policy.get('IsDisabled', 'N/A')}")
-                    policy["IsDisabled"] = True
+        try:
+            async with aiohttp.ClientSession() as session:
+                log.info(f"Obținere politică pentru user {user_id} de la {disable_url}")
+                async with session.get(disable_url, headers=headers, timeout=10) as resp:
+                    log.info(f"Status GET policy: {resp.status}")
+                    if resp.status == 200:
+                        policy = await resp.json()
+                        log.info(f"Politică obținută, IsDisabled curent: {policy.get('IsDisabled', 'N/A')}")
+                        policy["IsDisabled"] = True
                     
-                    # Actualizează politica
-                    log.info(f"Trimit UPDATE cu IsDisabled=True")
-                    async with session.post(disable_url, json=policy, headers=headers, timeout=10) as update_resp:
-                        log.info(f"Status POST policy: {update_resp.status}")
-                        if update_resp.status == 204:
-                            log.info("✅ Utilizator dezactivat cu succes")
-                            return True
-                        else:
-                            error_text = await update_resp.text()
-                            log.error(f"POST a returnat {update_resp.status}: {error_text}")
-                            return False
-                else:
-                    error_text = await resp.text()
-                    log.error(f"GET policy a returnat {resp.status}: {error_text}")
-                    return False
-    except Exception as e:
-        log.error(f"Eroare la dezactivarea utilizatorului: {e}", exc_info=True)
+                        # Actualizează politica
+                        log.info(f"Trimit UPDATE cu IsDisabled=True")
+                        async with session.post(disable_url, json=policy, headers=headers, timeout=10) as update_resp:
+                            log.info(f"Status POST policy: {update_resp.status}")
+                            if update_resp.status == 204:
+                                log.info("✅ Utilizator dezactivat cu succes")
+                                return True
+                            else:
+                                error_text = await update_resp.text()
+                                log.error(f"POST a returnat {update_resp.status}: {error_text}")
+                                return False
+                    else:
+                        error_text = await resp.text()
+                        log.error(f"GET policy a returnat {resp.status}: {error_text}")
+                        return False
+        except Exception as e:
+            log.error(f"Eroare la dezactivarea utilizatorului: {e}", exc_info=True)
     
-    return False
+        return False
     
     async def _delete_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
         """Șterge un utilizator Jellyfin"""
