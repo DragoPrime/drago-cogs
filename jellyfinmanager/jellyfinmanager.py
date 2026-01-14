@@ -179,19 +179,39 @@ class JellyfinCog(commands.Cog):
     
     async def _check_inactive_users(self):
         """Verifică utilizatorii inactivi și îi gestionează"""
+        log.info("=== ÎNCEPE VERIFICAREA INACTIVITĂȚII ===")
+        
         servers = await self.config.servers()
         users = await self.config.users()
+        
+        log.info(f"Servere configurate: {len(servers)}")
+        log.info(f"Utilizatori în tracking: {len(users)}")
         
         now = datetime.now()
         thirty_days_ago = now - timedelta(days=30)
         sixty_days_ago = now - timedelta(days=60)
         
+        log.info(f"Data curentă: {now}")
+        log.info(f"Limită 30 zile: {thirty_days_ago}")
+        log.info(f"Limită 60 zile: {sixty_days_ago}")
+        
+        total_checked = 0
+        total_disabled = 0
+        total_deleted = 0
+        
         for discord_user_id, user_servers in users.items():
+            log.info(f"\n--- Verificare utilizator Discord ID: {discord_user_id} ---")
+            
             for server_name, server_users in user_servers.items():
+                log.info(f"  Server: {server_name}")
+                
                 if server_name not in servers:
+                    log.warning(f"  ⚠️ Server {server_name} nu mai există în configurație, skip")
                     continue
                 
                 server_config = servers[server_name]
+                log.info(f"  Conectare la: {server_config['url']}")
+                
                 token = await self._get_jellyfin_auth_token(
                     server_config["url"],
                     server_config["admin_user"],
@@ -199,13 +219,22 @@ class JellyfinCog(commands.Cog):
                 )
                 
                 if not token:
+                    log.error(f"  ❌ Nu s-a putut obține token pentru {server_name}")
                     continue
                 
+                log.info(f"  ✅ Token obținut cu succes")
+                
                 for jellyfin_username, user_data in server_users.items():
+                    total_checked += 1
                     jellyfin_id = user_data.get("jellyfin_id")
                     current_status = user_data.get("status", "active")
                     
+                    log.info(f"\n    👤 Utilizator Jellyfin: {jellyfin_username}")
+                    log.info(f"       ID: {jellyfin_id}")
+                    log.info(f"       Status curent: {current_status}")
+                    
                     if not jellyfin_id:
+                        log.warning(f"       ⚠️ Nu există jellyfin_id, skip")
                         continue
                     
                     # Obține ultima activitate
@@ -214,49 +243,75 @@ class JellyfinCog(commands.Cog):
                     )
                     
                     if not last_activity:
+                        log.warning(f"       ⚠️ Nu s-a putut obține last_activity")
                         # Dacă nu putem obține activitatea, folosim data creării
                         created_at_str = user_data.get("created_at")
                         if created_at_str:
-                            # Parse datetime și elimină timezone info pentru consistență
                             created_at = datetime.fromisoformat(created_at_str)
                             if created_at.tzinfo is not None:
                                 created_at = created_at.replace(tzinfo=None)
                             last_activity = created_at
+                            log.info(f"       📅 Folosim created_at ca fallback: {created_at}")
                         else:
-                            # Dacă nu avem nici data creării, skip
+                            log.error(f"       ❌ Nu există nici created_at, skip complet")
                             continue
+                    else:
+                        log.info(f"       📅 Last activity găsit: {last_activity}")
+                    
+                    # Calculează zilele de inactivitate
+                    days_inactive = (now - last_activity).days
+                    log.info(f"       ⏰ Zile de inactivitate: {days_inactive}")
                     
                     # Verifică dacă trebuie șters (60+ zile)
                     if last_activity <= sixty_days_ago and current_status != "deleted":
+                        log.info(f"       🗑️ TREBUIE ȘTERS (>60 zile, status: {current_status})")
+                        
                         success = await self._delete_jellyfin_user(
                             server_config["url"], token, jellyfin_id
                         )
                         
                         if success:
+                            log.info(f"       ✅ Utilizator șters cu succes")
                             # Actualizează statusul
                             user_data["status"] = "deleted"
                             await self.config.users.set(users)
+                            total_deleted += 1
                             
                             # Trimite notificare
                             await self._send_cleanup_notification(
                                 server_name, jellyfin_username, discord_user_id, "deleted", last_activity
                             )
+                        else:
+                            log.error(f"       ❌ Ștergerea a eșuat")
                     
                     # Verifică dacă trebuie dezactivat (30+ zile)
                     elif last_activity <= thirty_days_ago and current_status == "active":
+                        log.info(f"       ⚠️ TREBUIE DEZACTIVAT (>30 zile, status: active)")
+                        
                         success = await self._disable_jellyfin_user(
                             server_config["url"], token, jellyfin_id
                         )
                         
                         if success:
+                            log.info(f"       ✅ Utilizator dezactivat cu succes")
                             # Actualizează statusul
                             user_data["status"] = "disabled"
                             await self.config.users.set(users)
+                            total_disabled += 1
                             
                             # Trimite notificare
                             await self._send_cleanup_notification(
                                 server_name, jellyfin_username, discord_user_id, "disabled", last_activity
                             )
+                        else:
+                            log.error(f"       ❌ Dezactivarea a eșuat")
+                    else:
+                        log.info(f"       ✅ Nu necesită acțiuni (zile: {days_inactive}, status: {current_status})")
+        
+        log.info(f"\n=== VERIFICARE COMPLETATĂ ===")
+        log.info(f"Total verificați: {total_checked}")
+        log.info(f"Total dezactivați: {total_disabled}")
+        log.info(f"Total șterși: {total_deleted}")
     
     async def _send_cleanup_notification(self, server_name: str, jellyfin_username: str, discord_user_id: int, action: str, last_activity: datetime):
         """Trimite notificare despre acțiunea de cleanup"""
