@@ -189,16 +189,24 @@ class JellyfinCog(commands.Cog):
     async def _delete_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
         """Șterge un utilizator Jellyfin"""
         delete_url = f"{server_url}/Users/{user_id}"
-        
+    
         headers = {"X-MediaBrowser-Token": token}
-        
+    
         try:
             async with aiohttp.ClientSession() as session:
+                log.info(f"Ștergere utilizator {user_id} de la {delete_url}")
                 async with session.delete(delete_url, headers=headers, timeout=10) as resp:
-                    return resp.status == 204
+                    log.info(f"Status DELETE user: {resp.status}")
+                    if resp.status == 204 or resp.status == 200:
+                        log.info("✅ Utilizator șters cu succes")
+                        return True
+                    else:
+                        error_text = await resp.text()
+                        log.error(f"DELETE a returnat {resp.status}: {error_text}")
+                        return False
         except Exception as e:
-            log.error(f"Eroare la ștergerea utilizatorului: {e}")
-        
+            log.error(f"Eroare la ștergerea utilizatorului: {e}", exc_info=True)
+    
         return False
     
     async def _check_inactive_users(self):
