@@ -142,26 +142,35 @@ class JellyfinCog(commands.Cog):
     
     async def _disable_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
         """Dezactivează un utilizator Jellyfin"""
-        disable_url = f"{server_url}/Users/{user_id}/Policy"
+        user_url = f"{server_url}/Users/{user_id}"
+        policy_url = f"{server_url}/Users/{user_id}/Policy"
     
-        # Obține politica actuală
-        headers = {"X-MediaBrowser-Token": token}
+        headers = {
+            "X-MediaBrowser-Token": token,
+            "Content-Type": "application/json"
+        }
     
         try:
             async with aiohttp.ClientSession() as session:
-                log.info(f"Obținere politică pentru user {user_id} de la {disable_url}")
-                async with session.get(disable_url, headers=headers, timeout=10) as resp:
-                    log.info(f"Status GET policy: {resp.status}")
+                # Obține informații despre utilizator
+                log.info(f"Obținere informații user de la {user_url}")
+                async with session.get(user_url, headers=headers, timeout=10) as resp:
+                    log.info(f"Status GET user: {resp.status}")
                     if resp.status == 200:
-                        policy = await resp.json()
-                        log.info(f"Politică obținută, IsDisabled curent: {policy.get('IsDisabled', 'N/A')}")
+                        user_data = await resp.json()
+                    
+                        # Obține politica din datele utilizatorului
+                        policy = user_data.get("Policy", {})
+                        log.info(f"Politică obținută, IsDisabled curent: {policy.get('IsDisabled', False)}")
+                    
+                        # Setează IsDisabled pe True
                         policy["IsDisabled"] = True
                     
                         # Actualizează politica
-                        log.info(f"Trimit UPDATE cu IsDisabled=True")
-                        async with session.post(disable_url, json=policy, headers=headers, timeout=10) as update_resp:
+                        log.info(f"Trimit UPDATE cu IsDisabled=True la {policy_url}")
+                        async with session.post(policy_url, json=policy, headers=headers, timeout=10) as update_resp:
                             log.info(f"Status POST policy: {update_resp.status}")
-                            if update_resp.status == 204:
+                            if update_resp.status == 204 or update_resp.status == 200:
                                 log.info("✅ Utilizator dezactivat cu succes")
                                 return True
                             else:
@@ -170,7 +179,7 @@ class JellyfinCog(commands.Cog):
                                 return False
                     else:
                         error_text = await resp.text()
-                        log.error(f"GET policy a returnat {resp.status}: {error_text}")
+                        log.error(f"GET user a returnat {resp.status}: {error_text}")
                         return False
         except Exception as e:
             log.error(f"Eroare la dezactivarea utilizatorului: {e}", exc_info=True)
