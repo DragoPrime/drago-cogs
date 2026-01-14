@@ -140,14 +140,14 @@ class JellyfinCog(commands.Cog):
             log.error(f"Eroare la obținerea ultimei activități pentru user {user_id}: {e}")
             return None
     
-    async def _disable_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
-      """Dezactivează un utilizator Jellyfin"""
-      disable_url = f"{server_url}/Users/{user_id}/Policy"
+async def _disable_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
+    """Dezactivează un utilizator Jellyfin"""
+    disable_url = f"{server_url}/Users/{user_id}/Policy"
     
-      # Obține politica actuală
-      headers = {"X-MediaBrowser-Token": token}
+    # Obține politica actuală
+    headers = {"X-MediaBrowser-Token": token}
     
-      try:
+    try:
         async with aiohttp.ClientSession() as session:
             log.info(f"Obținere politică pentru user {user_id} de la {disable_url}")
             async with session.get(disable_url, headers=headers, timeout=10) as resp:
