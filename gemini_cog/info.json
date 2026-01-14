@@ -1,9 +1,0 @@
-{
-    "name": "GeminiCog",
-    "author": ["Drago Prime"],
-    "description": "Un plugin simplu pentru a interacționa cu Gemini API.",
-    "short": "Interacționează cu Gemini API",
-    "tags": ["gemini", "ai", "discord"],
-    "min_bot_version": "3.5.0",
-    "end_user_data_statement": "Acest cog nu stochează date ale utilizatorilor."
-}
