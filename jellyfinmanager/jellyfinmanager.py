@@ -347,62 +347,133 @@ class JellyfinCog(commands.Cog):
     
     async def _send_cleanup_notification(self, server_name: str, jellyfin_username: str, discord_user_id: int, action: str, last_activity: datetime):
         """Trimite notificare despre acțiunea de cleanup"""
+        log.info(f"=== TRIMITERE NOTIFICARE ===")
+        log.info(f"Server: {server_name}, User: {jellyfin_username}, Action: {action}")
+    
+        # Determină textele și culorile în funcție de acțiune
+        color = 0xffa500 if action == "disabled" else 0xff0000
+        action_text = "dezactivat" if action == "disabled" else "șters"
+        icon = "⚠️" if action == "disabled" else "🗑️"
+    
+        days_inactive = (datetime.now() - last_activity).days
+    
+        # Încearcă să trimită DM utilizatorului
+        try:
+            discord_user = await self.bot.fetch_user(discord_user_id)
+            discord_user_name = str(discord_user)
+            log.info(f"  ✅ Utilizator Discord găsit: {discord_user_name}")
+        
+            # Creează embed pentru DM
+            dm_embed = discord.Embed(
+                title=f"{icon} Contul tău Jellyfin a fost {action_text}",
+                color=color,
+                timestamp=datetime.now()
+            )
+        
+            dm_embed.add_field(name="🖥️ Server", value=server_name, inline=True)
+            dm_embed.add_field(name="👤 Username Jellyfin", value=jellyfin_username, inline=True)
+            dm_embed.add_field(name="⏰ Zile de inactivitate", value=str(days_inactive), inline=True)
+            dm_embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
+        
+            if action == "disabled":
+                dm_embed.add_field(
+                    name="⚠️ Atenție",
+                    value="Contul tău a fost dezactivat din cauza inactivității. Va fi **șters permanent** în 30 de zile dacă nu este folosit.\n\nLoghează-te și vizionează ceva pentru a-l reactiva!",
+                    inline=False
+                )
+            else:
+                dm_embed.add_field(
+                    name="🗑️ Cont șters",
+                    value="Contul tău a fost șters definitiv din cauza inactivității prelungite (60+ zile). Dacă dorești un nou cont, contactează administratorii.",
+                    inline=False
+                )
+        
+            dm_embed.add_field(
+                name="🤖 Mesaj automat",
+                value="*Acest mesaj a fost generat automat. Te rugăm să nu răspunzi la această conversație.*",
+                inline=False
+            )
+        
+            dm_embed.set_footer(text="Cleanup automat Jellyfin")
+        
+            try:
+                log.info(f"  📤 Trimit DM către {discord_user_name}...")
+                await discord_user.send(embed=dm_embed)
+                log.info(f"  ✅ DM trimis cu succes!")
+            except discord.Forbidden:
+                log.warning(f"  ⚠️ Utilizatorul {discord_user_name} are DM-urile închise")
+            except Exception as e:
+                log.error(f"  ❌ Eroare la trimiterea DM: {e}")
+        except discord.NotFound:
+            discord_user_name = f"Utilizator necunoscut (ID: {discord_user_id})"
+            log.warning(f"  ⚠️ Utilizatorul Discord nu a fost găsit: {discord_user_id}")
+        except Exception as e:
+            discord_user_name = f"Utilizator necunoscut (ID: {discord_user_id})"
+            log.error(f"  ❌ Eroare la obținerea utilizatorului Discord: {e}")
+    
         # Caută toate guild-urile unde este configurat acest server
         all_guilds = await self.config.all_guilds()
-        
+        log.info(f"Total guilds în config: {len(all_guilds)}")
+    
         for guild_id, guild_config in all_guilds.items():
-            if not guild_config.get("auto_cleanup_enabled", True):
-                continue
-                
-            notification_channel_id = guild_config.get("notification_channel")
-            if not notification_channel_id:
+            log.info(f"\n  Verificare guild {guild_id}:")
+        
+            cleanup_enabled = guild_config.get("auto_cleanup_enabled", True)
+            log.info(f"    Cleanup enabled: {cleanup_enabled}")
+        
+            if not cleanup_enabled:
+                log.info(f"    ⚠️ Cleanup dezactivat pe acest guild, skip")
                 continue
             
+            notification_channel_id = guild_config.get("notification_channel")
+            log.info(f"    Notification channel ID: {notification_channel_id}")
+        
+            if not notification_channel_id:
+                log.warning(f"    ⚠️ Nu există canal de notificări setat, skip")
+                continue
+        
             guild = self.bot.get_guild(guild_id)
             if not guild:
+                log.error(f"    ❌ Guild-ul {guild_id} nu a fost găsit")
                 continue
-            
+        
+            log.info(f"    ✅ Guild găsit: {guild.name}")
+        
             channel = guild.get_channel(notification_channel_id)
             if not channel:
+                log.error(f"    ❌ Canalul {notification_channel_id} nu a fost găsit în guild")
                 continue
-            
-            # Obține informații despre utilizatorul Discord
-            try:
-                discord_user = await self.bot.fetch_user(discord_user_id)
-                discord_user_name = str(discord_user)
-            except:
-                discord_user_name = f"Utilizator necunoscut (ID: {discord_user_id})"
-            
-            # Creează embed-ul de notificare
-            color = 0xffa500 if action == "disabled" else 0xff0000  # Orange pentru disabled, roșu pentru deleted
-            action_text = "dezactivat" if action == "disabled" else "șters"
-            icon = "⚠️" if action == "disabled" else "🗑️"
-            
-            embed = discord.Embed(
+        
+            log.info(f"    ✅ Canal găsit: #{channel.name}")
+        
+            # Creează embed pentru canalul public
+            channel_embed = discord.Embed(
                 title=f"{icon} Utilizator {action_text}",
                 color=color,
                 timestamp=datetime.now()
             )
-            
-            embed.add_field(name="👤 Utilizator Discord", value=discord_user_name, inline=True)
-            embed.add_field(name="🎬 Utilizator Jellyfin", value=jellyfin_username, inline=True)
-            embed.add_field(name="🖥️ Server", value=server_name, inline=True)
-            embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
-            
-            days_inactive = (datetime.now() - last_activity).days
-            embed.add_field(name="⏰ Zile inactive", value=str(days_inactive), inline=True)
-            
+        
+            channel_embed.add_field(name="👤 Utilizator Discord", value=discord_user_name, inline=True)
+            channel_embed.add_field(name="🎬 Utilizator Jellyfin", value=jellyfin_username, inline=True)
+            channel_embed.add_field(name="🖥️ Server", value=server_name, inline=True)
+            channel_embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
+            channel_embed.add_field(name="⏰ Zile inactive", value=str(days_inactive), inline=True)
+        
             if action == "disabled":
-                embed.add_field(name="ℹ️ Notă", value="Utilizatorul va fi șters în 30 de zile dacă rămâne inactiv", inline=False)
-            
-            embed.set_footer(text="Cleanup automat Jellyfin")
-            
+                channel_embed.add_field(name="ℹ️ Notă", value="Utilizatorul va fi șters în 30 de zile dacă rămâne inactiv", inline=False)
+        
+            channel_embed.set_footer(text="Cleanup automat Jellyfin")
+        
             try:
-                await channel.send(embed=embed)
+                log.info(f"    📤 Trimit mesaj în #{channel.name}...")
+                await channel.send(embed=channel_embed)
+                log.info(f"    ✅ Mesaj trimis cu succes!")
             except discord.Forbidden:
-                log.error(f"Nu am permisiuni să trimit mesaj în canalul {channel.id}")
+                log.error(f"    ❌ Nu am permisiuni să trimit mesaj în #{channel.name}")
             except Exception as e:
-                log.error(f"Eroare la trimiterea notificării: {e}")
+                log.error(f"    ❌ Eroare la trimiterea notificării: {e}", exc_info=True)
+    
+        log.info(f"=== NOTIFICARE COMPLETATĂ ===\n")
     
     async def _create_jellyfin_user(self, server_url: str, token: str, username: str, password: str) -> Dict[str, Any]:
         """Creează un utilizator pe serverul Jellyfin"""
