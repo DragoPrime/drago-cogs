@@ -770,6 +770,99 @@ class JellyfinCog(commands.Cog):
         await self.config.guild(ctx.guild).enabled.set(False)
         await ctx.send("✅ Comenzile Jellyfin au fost dezactivate pe acest server.")
     
+    @server.command(name="resetusers")
+    @checks.is_owner()
+    async def reset_users(self, ctx):
+        """
+        Șterge TOATE înregistrările de utilizatori din baza de date
+        
+        ⚠️ ATENȚIE: Această comandă este IREVERSIBILĂ!
+        Va șterge complet istoricul tuturor utilizatorilor Jellyfin din tracking.
+        """
+        # Obține numărul actual de utilizatori
+        users = await self.config.users()
+        total_users = sum(len(servers) for servers in users.values())
+        total_discord_users = len(users)
+        
+        if total_users == 0:
+            await ctx.send("✅ Nu există utilizatori în baza de date.")
+            return
+        
+        # Creează embed de avertizare
+        warning_embed = discord.Embed(
+            title="⚠️ AVERTIZARE - Reset Complet Utilizatori",
+            color=0xff0000,
+            description="Ești pe cale să ștergi **COMPLET** toate înregistrările de utilizatori din baza de date!"
+        )
+        
+        warning_embed.add_field(
+            name="📊 Ce va fi șters:",
+            value=f"• **{total_discord_users}** utilizatori Discord\n"
+                  f"• **{total_users}** conturi Jellyfin\n"
+                  f"• Tot istoricul de tracking\n"
+                  f"• Toate statusurile (activ/dezactivat/șters)",
+            inline=False
+        )
+        
+        warning_embed.add_field(
+            name="⚠️ Important:",
+            value="• Această acțiune **NU** șterge utilizatorii de pe serverele Jellyfin\n"
+                  f"• Șterge doar tracking-ul din baza de date a botului\n"
+                  f"• **Această acțiune este IREVERSIBILĂ**",
+            inline=False
+        )
+        
+        warning_embed.add_field(
+            name="✅ Pentru a confirma:",
+            value="Scrie `CONFIRM DELETE ALL` în următoarele 30 de secunde",
+            inline=False
+        )
+        
+        warning_embed.set_footer(text="Ai 30 de secunde să confirmi sau operațiunea va fi anulată")
+        
+        await ctx.send(embed=warning_embed)
+        
+        # Așteaptă confirmare
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel and m.content == "CONFIRM DELETE ALL"
+        
+        try:
+            await self.bot.wait_for('message', timeout=30.0, check=check)
+        except asyncio.TimeoutError:
+            await ctx.send("❌ Operațiune anulată - timeout.")
+            return
+        
+        # Efectuează resetul
+        await self.config.users.set({})
+        
+        # Creează embed de confirmare
+        success_embed = discord.Embed(
+            title="✅ Reset Complet Efectuat",
+            color=0x00ff00,
+            description="Toate înregistrările de utilizatori au fost șterse din baza de date"
+        )
+        
+        success_embed.add_field(
+            name="📊 Statistici ștergere:",
+            value=f"• {total_discord_users} utilizatori Discord\n"
+                  f"• {total_users} conturi Jellyfin\n"
+                  f"• Baza de date a fost resetată complet",
+            inline=False
+        )
+        
+        success_embed.add_field(
+            name="ℹ️ Notă:",
+            value="Utilizatorii de pe serverele Jellyfin **NU** au fost afectați.\n"
+                  "Doar tracking-ul local a fost șters.",
+            inline=False
+        )
+        
+        success_embed.set_footer(text=f"Reset efectuat de {ctx.author}")
+        
+        await ctx.send(embed=success_embed)
+        
+        log.info(f"Reset complet utilizatori efectuat de {ctx.author} - {total_users} conturi șterse")
+    
     @commands.command(name="creeaza")
     async def create_user(self, ctx, nume_server: str, nume_utilizator: str, parola: str):
         """
