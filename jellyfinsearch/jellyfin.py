@@ -58,6 +58,10 @@ class JellyfinSearchView(discord.ui.View):
             item_type = "Serial"
         embed.add_field(name="Tip", value=item_type, inline=True)
         
+        # Adăugăm numele serverului
+        server_name = item.get('ServerName', 'Necunoscut')
+        embed.add_field(name="Server", value=server_name, inline=True)
+        
         runtime = self.cog.format_runtime(item.get('RunTimeTicks'))
         if runtime != "N/A":
             embed.add_field(name="Durată", value=runtime, inline=True)
@@ -82,14 +86,16 @@ class JellyfinSearchView(discord.ui.View):
         if item.get('TMDBPosterPath'):
             thumbnail_url = f"https://image.tmdb.org/t/p/w342{item['TMDBPosterPath']}"
             embed.set_thumbnail(url=thumbnail_url)
-        elif item.get('Id'):
-            thumbnail_url = f"{self.cog.base_url}/Items/{item['Id']}/Images/Primary?maxHeight=400&maxWidth=266&quality=90&api_key={self.cog.api_key}"
+        elif item.get('Id') and item.get('ServerURL') and item.get('ServerAPIKey'):
+            thumbnail_url = f"{item['ServerURL']}/Items/{item['Id']}/Images/Primary?maxHeight=400&maxWidth=266&quality=90&api_key={item['ServerAPIKey']}"
             embed.set_thumbnail(url=thumbnail_url)
         
         item_id = item.get('Id')
-        if item_id:
-            web_url = f"{self.cog.base_url}/web/index.html#!/details?id={item_id}"
-            embed.add_field(name="Vizionare Online:", value=f"[Freia [SERVER 2]]({web_url})", inline=False)
+        server_url = item.get('ServerURL')
+        server_name = item.get('ServerName', 'Server')
+        if item_id and server_url:
+            web_url = f"{server_url}/web/index.html#!/details?id={item_id}"
+            embed.add_field(name="Vizionare Online:", value=f"[{server_name}]({web_url})", inline=False)
         
         embed.set_footer(text=f"Pagina {self.current_page + 1}/{self.total_pages} • S-au găsit {self.total_results} rezultate în total")
         
@@ -114,16 +120,18 @@ class JellyfinSearchView(discord.ui.View):
         """Buton pentru afișarea mai multor detalii despre titlul curent"""
         item = self.items[self.current_page]
         item_id = item.get('Id')
+        server_url = item.get('ServerURL')
+        server_name = item.get('ServerName', 'Server')
         
-        if not item_id:
+        if not item_id or not server_url:
             await interaction.response.send_message("Nu sunt disponibile informații suplimentare pentru acest titlu.", ephemeral=True)
             return
             
         item_name = item.get('Name', 'Titlu necunoscut')
-        web_url = f"{self.cog.base_url}/web/index.html#!/details?id={item_id}"
+        web_url = f"{server_url}/web/index.html#!/details?id={item_id}"
         
         await interaction.response.send_message(
-            f"**{item_name}**\nPoți accesa direct acest titlu din Freia folosind link-ul: {web_url}", 
+            f"**{item_name}**\nPoți accesa direct acest titlu din {server_name} folosind link-ul: {web_url}", 
             ephemeral=True
         )
     
@@ -147,59 +155,110 @@ class JellyfinSearch(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=856712356)
         default_global = {
-            "base_url": None,
-            "api_key": None,
+            "servers": {},  # Format: {"server_name": {"url": "...", "api_key": "..."}}
             "tmdb_api_key": None
         }
         self.config.register_global(**default_global)
-        self.base_url = None
-        self.api_key = None
+        self.servers = {}
         self.tmdb_api_key = None
     
     async def cog_load(self):
         """Load cached settings when cog loads"""
-        self.base_url = await self.config.base_url()
-        self.api_key = await self.config.api_key()
+        self.servers = await self.config.servers()
         self.tmdb_api_key = await self.config.tmdb_api_key()
 
-    async def get_base_url(self):
-        """Get the stored base URL"""
-        return self.base_url or await self.config.base_url()
-
-    async def get_api_key(self):
-        """Get the stored API key"""
-        return self.api_key or await self.config.api_key()
+    async def get_servers(self):
+        """Get all configured servers"""
+        return self.servers or await self.config.servers()
     
     async def get_tmdb_api_key(self):
         """Get the stored TMDB API key"""
         return self.tmdb_api_key or await self.config.tmdb_api_key()
 
-    @commands.command()
+    @commands.group(name="jellyfinset")
     @commands.is_owner()
-    async def setjellyfinurl(self, ctx, url: str):
-        """Set the Jellyfin server URL"""
-        url = url.rstrip('/')
-        await self.config.base_url.set(url)
-        self.base_url = url
-        await ctx.send(f"URL-ul serverului Jellyfin a fost setat la: {url}")
+    async def jellyfinset(self, ctx):
+        """Configurare servere Jellyfin"""
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
 
-    @commands.command()
-    @commands.is_owner()
-    async def setjellyfinapi(self, ctx, api_key: str):
-        """Set the Jellyfin API key"""
-        await self.config.api_key.set(api_key)
-        self.api_key = api_key
-        await ctx.send("Cheia API Jellyfin a fost setată.")
-        await ctx.message.delete()
-    
-    @commands.command()
-    @commands.is_owner()
-    async def freiatmdb(self, ctx, api_key: str):
-        """Set the TMDB API key"""
+    @jellyfinset.command(name="addserver")
+    async def add_server(self, ctx, server_name: str, url: str, api_key: str):
+        """
+        Adaugă un server Jellyfin nou
+        
+        Exemplu: !jellyfinset addserver Freia https://jellyfin.example.com api_key_aici
+        """
+        url = url.rstrip('/')
+        
+        servers = await self.config.servers()
+        servers[server_name] = {
+            "url": url,
+            "api_key": api_key
+        }
+        await self.config.servers.set(servers)
+        self.servers = servers
+        
+        await ctx.send(f"✅ Serverul **{server_name}** a fost adăugat cu succes!")
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+
+    @jellyfinset.command(name="removeserver")
+    async def remove_server(self, ctx, server_name: str):
+        """
+        Elimină un server Jellyfin
+        
+        Exemplu: !jellyfinset removeserver Freia
+        """
+        servers = await self.config.servers()
+        
+        if server_name not in servers:
+            return await ctx.send(f"❌ Serverul **{server_name}** nu există în configurare.")
+        
+        del servers[server_name]
+        await self.config.servers.set(servers)
+        self.servers = servers
+        
+        await ctx.send(f"✅ Serverul **{server_name}** a fost eliminat.")
+
+    @jellyfinset.command(name="listservers")
+    async def list_servers(self, ctx):
+        """Afișează toate serverele configurate"""
+        servers = await self.config.servers()
+        
+        if not servers:
+            return await ctx.send("❌ Nu există servere configurate. Folosește `!jellyfinset addserver` pentru a adăuga unul.")
+        
+        embed = discord.Embed(
+            title="🎬 Servere Jellyfin Configurate",
+            color=discord.Color.green()
+        )
+        
+        for server_name, server_data in servers.items():
+            embed.add_field(
+                name=server_name,
+                value=f"URL: {server_data['url']}",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+
+    @jellyfinset.command(name="tmdb")
+    async def set_tmdb(self, ctx, api_key: str):
+        """
+        Setează cheia API TMDB
+        
+        Exemplu: !jellyfinset tmdb api_key_aici
+        """
         await self.config.tmdb_api_key.set(api_key)
         self.tmdb_api_key = api_key
-        await ctx.send("Cheia API TMDB a fost setată.")
-        await ctx.message.delete()
+        await ctx.send("✅ Cheia API TMDB a fost setată.")
+        try:
+            await ctx.message.delete()
+        except:
+            pass
 
     def format_runtime(self, runtime_ticks):
         """Convert runtime ticks to hours and minutes"""
@@ -354,15 +413,51 @@ class JellyfinSearch(commands.Cog):
         
         return item
 
-    @commands.command(name="freia")
-    async def freia(self, ctx, *, query: str):
-        """Search for content on your Jellyfin server"""
-        self.base_url = await self.get_base_url()
-        self.api_key = await self.get_api_key()
+    async def search_on_server(self, server_name: str, server_data: dict, search_titles: List[str]) -> List[Dict]:
+        """Search for content on a single Jellyfin server"""
+        all_items = []
+        seen_ids = set()
+        
+        base_url = server_data['url']
+        api_key = server_data['api_key']
+        
+        for title in search_titles[:20]:  # Limităm la primele 20 titluri
+            encoded_query = urllib.parse.quote(title)
+            search_url = f"{base_url}/Items?searchTerm={encoded_query}&IncludeItemTypes=Movie,Series&Recursive=true&SearchType=String&IncludeMedia=true&IncludeOverview=true&Limit=50&api_key={api_key}"
+            
+            async with aiohttp.ClientSession() as session:
+                try:
+                    async with session.get(search_url, timeout=10) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            items = data.get('Items', [])
+                            
+                            # Adăugăm doar itemele noi (fără duplicate)
+                            for item in items:
+                                item_id = item.get('Id')
+                                if item_id and item_id not in seen_ids:
+                                    seen_ids.add(item_id)
+                                    # Adăugăm informații despre server
+                                    item['ServerName'] = server_name
+                                    item['ServerURL'] = base_url
+                                    item['ServerAPIKey'] = api_key
+                                    all_items.append(item)
+                except Exception as e:
+                    pass
+            
+            # Adăugăm un mic delay între cereri
+            await asyncio.sleep(0.2)
+        
+        return all_items
+
+    @commands.command(name="cauta")
+    async def cauta(self, ctx, *, query: str):
+        """Caută conținut pe toate serverele Jellyfin configurate"""
+        self.servers = await self.get_servers()
         self.tmdb_api_key = await self.get_tmdb_api_key()
         
-        if not self.base_url or not self.api_key:
-            return await ctx.send("Te rog să setezi mai întâi URL-ul și cheia API folosind `setjellyfinurl` și `setjellyfinapi`")
+        if not self.servers:
+            return await ctx.send("❌ Nu există servere configurate. Administratorul trebuie să adauge servere folosind `!jellyfinset addserver`")
         
         async with ctx.typing():
             # Căutăm toate titlurile de pe TMDB (dacă există cheie API)
@@ -388,39 +483,20 @@ class JellyfinSearch(commands.Cog):
                     seen.add(title.lower())
                     unique_titles.append(title)
             
-            # Căutăm pe Jellyfin cu toate titlurile
+            # Căutăm pe toate serverele Jellyfin
             all_items = []
-            seen_ids = set()
             
-            wait_msg = await ctx.send(f"🔍 Se caută pe serverul Jellyfin cu {len(unique_titles)} titluri diferite...")
+            wait_msg = await ctx.send(f"🔍 Se caută pe {len(self.servers)} servere Jellyfin cu {len(unique_titles)} titluri diferite...")
             
-            for title in unique_titles[:20]:  # Limităm la primele 20 titluri pentru a nu supraîncărca
-                encoded_query = urllib.parse.quote(title)
-                search_url = f"{self.base_url}/Items?searchTerm={encoded_query}&IncludeItemTypes=Movie,Series&Recursive=true&SearchType=String&IncludeMedia=true&IncludeOverview=true&Limit=50&api_key={self.api_key}"
-                
-                async with aiohttp.ClientSession() as session:
-                    try:
-                        async with session.get(search_url) as response:
-                            if response.status == 200:
-                                data = await response.json()
-                                items = data.get('Items', [])
-                                
-                                # Adăugăm doar itemele noi (fără duplicate)
-                                for item in items:
-                                    item_id = item.get('Id')
-                                    if item_id and item_id not in seen_ids:
-                                        seen_ids.add(item_id)
-                                        all_items.append(item)
-                    except Exception as e:
-                        pass
-                
-                # Adăugăm un mic delay între cereri
-                await asyncio.sleep(0.2)
+            # Căutăm pe fiecare server
+            for server_name, server_data in self.servers.items():
+                server_items = await self.search_on_server(server_name, server_data, unique_titles)
+                all_items.extend(server_items)
             
             await wait_msg.delete()
             
             if not all_items:
-                return await ctx.send("Nu s-au găsit rezultate pe serverul Jellyfin.")
+                return await ctx.send("❌ Nu s-au găsit rezultate pe niciun server Jellyfin.")
             
             # Procesăm primele 10 rezultate pentru a obține informații TMDB îmbogățite
             enhanced_items = []
