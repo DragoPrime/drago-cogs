@@ -220,10 +220,12 @@ class JellyfinCog(commands.Cog):
         log.info(f"Utilizatori în tracking: {len(users)}")
         
         now = datetime.now()
+        seven_days_ago = now - timedelta(days=7)
         thirty_days_ago = now - timedelta(days=30)
         sixty_days_ago = now - timedelta(days=60)
         
         log.info(f"Data curentă: {now}")
+        log.info(f"Limită 7 zile (utilizatori noi fără login): {seven_days_ago}")
         log.info(f"Limită 30 zile: {thirty_days_ago}")
         log.info(f"Limită 60 zile: {sixty_days_ago}")
         
@@ -284,6 +286,35 @@ class JellyfinCog(commands.Cog):
                                 created_at = created_at.replace(tzinfo=None)
                             last_activity = created_at
                             log.info(f"       📅 Folosim created_at ca fallback: {created_at}")
+                            
+                            # Verificăm dacă utilizatorul nu s-a conectat niciodată
+                            # Dacă last_activity == created_at, înseamnă că nu are istoric de vizionare
+                            days_since_creation = (now - created_at).days
+                            log.info(f"       📊 Zile de la creare: {days_since_creation}")
+                            
+                            # Dacă utilizatorul a fost creat acum 7+ zile și nu s-a conectat niciodată
+                            if created_at <= seven_days_ago and current_status != "deleted":
+                                log.info(f"       🗑️ UTILIZATOR FĂRĂ LOGIN - Șters (>7 zile fără conectare)")
+                                
+                                success = await self._delete_jellyfin_user(
+                                    server_config["url"], token, jellyfin_id
+                                )
+                                
+                                if success:
+                                    log.info(f"       ✅ Utilizator șters cu succes (niciodată conectat)")
+                                    # Actualizează statusul
+                                    user_data["status"] = "deleted"
+                                    user_data["deletion_reason"] = "never_logged_in"
+                                    await self.config.users.set(users)
+                                    total_deleted += 1
+                                    
+                                    # Trimite notificare specială pentru utilizatori fără login
+                                    await self._send_cleanup_notification(
+                                        server_name, jellyfin_username, discord_user_id, "deleted_no_login", created_at
+                                    )
+                                else:
+                                    log.error(f"       ❌ Ștergerea a eșuat")
+                                continue  # Trecem la următorul utilizator
                         else:
                             log.error(f"       ❌ Nu există nici created_at, skip complet")
                             continue
@@ -351,9 +382,18 @@ class JellyfinCog(commands.Cog):
         log.info(f"Server: {server_name}, User: {jellyfin_username}, Action: {action}")
     
         # Determină textele și culorile în funcție de acțiune
-        color = 0xffa500 if action == "disabled" else 0xff0000
-        action_text = "dezactivat" if action == "disabled" else "șters"
-        icon = "⚠️" if action == "disabled" else "🗑️"
+        if action == "disabled":
+            color = 0xffa500
+            action_text = "dezactivat"
+            icon = "⚠️"
+        elif action == "deleted_no_login":
+            color = 0xff6b6b
+            action_text = "șters (niciodată conectat)"
+            icon = "🚫"
+        else:  # deleted
+            color = 0xff0000
+            action_text = "șters"
+            icon = "🗑️"
     
         days_inactive = (datetime.now() - last_activity).days
     
@@ -372,8 +412,13 @@ class JellyfinCog(commands.Cog):
         
             dm_embed.add_field(name="🖥️ Server", value=server_name, inline=True)
             dm_embed.add_field(name="👤 Username Jellyfin", value=jellyfin_username, inline=True)
-            dm_embed.add_field(name="⏰ Zile de inactivitate", value=str(days_inactive), inline=True)
-            dm_embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
+            
+            if action == "deleted_no_login":
+                dm_embed.add_field(name="📅 Creat la", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
+                dm_embed.add_field(name="⏰ Zile de la creare", value=str(days_inactive), inline=True)
+            else:
+                dm_embed.add_field(name="⏰ Zile de inactivitate", value=str(days_inactive), inline=True)
+                dm_embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
         
             if action == "disabled":
                 dm_embed.add_field(
@@ -381,7 +426,13 @@ class JellyfinCog(commands.Cog):
                     value="Contul tău a fost dezactivat din cauza inactivității. Va fi **șters permanent** în 30 de zile dacă nu este folosit.\n\nLoghează-te și vizionează ceva pentru a-l reactiva!",
                     inline=False
                 )
-            else:
+            elif action == "deleted_no_login":
+                dm_embed.add_field(
+                    name="🚫 Cont șters - Niciodată folosit",
+                    value=f"Contul tău a fost șters deoarece nu te-ai conectat la el în **7 zile** de la creare.\n\nDacă ai nevoie de un nou cont, te rog contactează administratorii.",
+                    inline=False
+                )
+            else:  # deleted
                 dm_embed.add_field(
                     name="🗑️ Cont șters",
                     value="Contul tău a fost șters definitiv din cauza inactivității prelungite (60+ zile). Dacă dorești un nou cont, contactează administratorii.",
@@ -456,11 +507,17 @@ class JellyfinCog(commands.Cog):
             channel_embed.add_field(name="👤 Utilizator Discord", value=discord_user_name, inline=True)
             channel_embed.add_field(name="🎬 Utilizator Jellyfin", value=jellyfin_username, inline=True)
             channel_embed.add_field(name="🖥️ Server", value=server_name, inline=True)
-            channel_embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
-            channel_embed.add_field(name="⏰ Zile inactive", value=str(days_inactive), inline=True)
-        
-            if action == "disabled":
-                channel_embed.add_field(name="ℹ️ Notă", value="Utilizatorul va fi șters în 30 de zile dacă rămâne inactiv", inline=False)
+            
+            if action == "deleted_no_login":
+                channel_embed.add_field(name="📅 Creat la", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
+                channel_embed.add_field(name="⏰ Zile de la creare", value=str(days_inactive), inline=True)
+                channel_embed.add_field(name="ℹ️ Notă", value="Utilizatorul nu s-a conectat niciodată (șters după 7 zile)", inline=False)
+            else:
+                channel_embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
+                channel_embed.add_field(name="⏰ Zile inactive", value=str(days_inactive), inline=True)
+                
+                if action == "disabled":
+                    channel_embed.add_field(name="ℹ️ Notă", value="Utilizatorul va fi șters în 30 de zile dacă rămâne inactiv", inline=False)
         
             channel_embed.set_footer(text="Cleanup automat Jellyfin")
         
