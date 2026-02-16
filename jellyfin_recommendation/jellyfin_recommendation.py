@@ -138,6 +138,39 @@ class JellyfinRecommendation(commands.Cog):
         print("Failed to get TMDb data after all retry attempts")
         return None
 
+    async def get_item_details(self, base_url, api_key, item_id):
+        """Obține detalii complete despre un item din Jellyfin"""
+        details_url = f"{base_url}/Users/{{UserId}}/Items/{item_id}?api_key={api_key}"
+        
+        # Încearcă să obțină UserId
+        users_url = f"{base_url}/Users?api_key={api_key}"
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                # Obține primul user
+                async with session.get(users_url) as response:
+                    if response.status == 200:
+                        users = await response.json()
+                        if users:
+                            user_id = users[0]['Id']
+                            details_url = f"{base_url}/Users/{user_id}/Items/{item_id}?api_key={api_key}"
+                        else:
+                            # Fallback la Items endpoint fără UserId
+                            details_url = f"{base_url}/Items/{item_id}?api_key={api_key}"
+                    else:
+                        details_url = f"{base_url}/Items/{item_id}?api_key={api_key}"
+                
+                # Obține detaliile item-ului
+                async with session.get(details_url) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    else:
+                        print(f"Error fetching item details: Status {response.status}")
+                        return None
+        except Exception as e:
+            print(f"Error in get_item_details: {e}")
+            return None
+
     async def send_recommendation(self, guild, media_type):
         """Send a recommendation to the configured channel"""
         settings = await self.config.guild(guild).get_raw(media_type)
@@ -154,7 +187,7 @@ class JellyfinRecommendation(commands.Cog):
         item_id = item.get('Id')
         
         media_display = "Film" if is_movie else "Serial"
-        overview = item.get('Overview', 'Fără descriere disponibilă.')
+        overview = None
         poster_url = None
         
         # Pentru anime, folosește TMDb
@@ -172,14 +205,36 @@ class JellyfinRecommendation(commands.Cog):
         
         # Pentru porn, folosește datele din Jellyfin
         else:
+            # Încearcă să obții detalii complete din Jellyfin
+            full_item = await self.get_item_details(settings['base_url'], settings['api_key'], item_id)
+            
+            if full_item:
+                # Încearcă mai multe câmpuri pentru descriere
+                overview = (
+                    full_item.get('Overview') or 
+                    full_item.get('Summary') or 
+                    full_item.get('Plot') or
+                    full_item.get('Description') or
+                    item.get('Overview') or
+                    item.get('Summary')
+                )
+            else:
+                # Fallback la datele inițiale
+                overview = item.get('Overview') or item.get('Summary')
+            
             # Traduce descrierea din Jellyfin
-            if overview and overview != 'Fără descriere disponibilă.':
+            if overview and overview.strip():
                 overview = await self.translate_to_romanian(overview)
+            else:
+                overview = 'Fără descriere disponibilă.'
             
             # Folosește posterul din Jellyfin
             if item_id and item.get('ImageTags', {}).get('Primary'):
                 poster_url = f"{settings['base_url']}/Items/{item_id}/Images/Primary?api_key={settings['api_key']}"
         
+        if not overview or overview.strip() == '':
+            overview = 'Fără descriere disponibilă.'
+            
         if len(overview) > 1000:
             overview = overview[:997] + "..."
 
@@ -408,7 +463,7 @@ class JellyfinRecommendation(commands.Cog):
             item_id = item.get('Id')
             
             media_display = "Film" if is_movie else "Serial"
-            overview = item.get('Overview', 'Fără descriere disponibilă.')
+            overview = None
             poster_url = None
             
             # Pentru anime, folosește TMDb
@@ -426,14 +481,36 @@ class JellyfinRecommendation(commands.Cog):
             
             # Pentru porn, folosește datele din Jellyfin
             else:
+                # Încearcă să obții detalii complete din Jellyfin
+                full_item = await self.get_item_details(settings['base_url'], settings['api_key'], item_id)
+                
+                if full_item:
+                    # Încearcă mai multe câmpuri pentru descriere
+                    overview = (
+                        full_item.get('Overview') or 
+                        full_item.get('Summary') or 
+                        full_item.get('Plot') or
+                        full_item.get('Description') or
+                        item.get('Overview') or
+                        item.get('Summary')
+                    )
+                else:
+                    # Fallback la datele inițiale
+                    overview = item.get('Overview') or item.get('Summary')
+                
                 # Traduce descrierea din Jellyfin
-                if overview and overview != 'Fără descriere disponibilă.':
+                if overview and overview.strip():
                     overview = await self.translate_to_romanian(overview)
+                else:
+                    overview = 'Fără descriere disponibilă.'
                 
                 # Folosește posterul din Jellyfin
                 if item_id and item.get('ImageTags', {}).get('Primary'):
                     poster_url = f"{settings['base_url']}/Items/{item_id}/Images/Primary?api_key={settings['api_key']}"
             
+            if not overview or overview.strip() == '':
+                overview = 'Fără descriere disponibilă.'
+                
             if len(overview) > 1000:
                 overview = overview[:997] + "..."
 
