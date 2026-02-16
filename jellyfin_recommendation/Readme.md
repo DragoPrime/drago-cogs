@@ -196,29 +196,10 @@ Botul necesită următoarele permisiuni în canalele configurate:
 - Asigură-te că `deep-translator` este instalat corect
 - Verifică consolele pentru erori de la Google Translate
 
-## Suport
-
-Pentru probleme, bug-uri sau sugestii:
-- Deschide un issue pe GitHub
-- Contactează dezvoltatorul: Drago Prime
-
-## Licență
-
-[Specifică licența aici]
-
-## Changelog
-
-### v1.0.0
-- ✨ Lansare inițială
-- 🎌 Suport pentru anime cu integrare TMDb
-- 🔞 Suport pentru conținut adult cu metadata Jellyfin
-- 🌐 Traducere automată în română
-- ⏰ Recomandări automate săptămânale
-- 🎲 Comenzi manuale pentru recomandări instant
-
 ## Credite
 
 - **Autor**: Drago Prime
+- **Creator**: [ClaudeAI](https://claude.ai)
 - **Framework**: [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot)
 - **APIs**: [Jellyfin](https://jellyfin.org/), [TMDb](https://www.themoviedb.org/)
 - **Traducere**: [deep-translator](https://github.com/nidhaloff/deep-translator)
