@@ -151,17 +151,34 @@ class JellyfinRecommendation(commands.Cog):
         title = item.get('Name', 'Titlu necunoscut')
         year = item.get('ProductionYear', 'An necunoscut')
         is_movie = item.get('Type') == "Movie"
+        item_id = item.get('Id')
         
         media_display = "Film" if is_movie else "Serial"
         overview = item.get('Overview', 'Fără descriere disponibilă.')
+        poster_url = None
         
-        tmdb_data = None
-        if settings.get('tmdb_api_key'):
-            tmdb_data = await self.search_tmdb(title, year, is_movie, settings['tmdb_api_key'])
+        # Pentru anime, folosește TMDb
+        if media_type == 'anime':
+            tmdb_data = None
+            if settings.get('tmdb_api_key'):
+                tmdb_data = await self.search_tmdb(title, year, is_movie, settings['tmdb_api_key'])
+            
+            if tmdb_data and tmdb_data.get('overview'):
+                overview = tmdb_data['overview']
+                overview = await self.translate_to_romanian(overview)
+            
+            if tmdb_data and tmdb_data.get('poster_path'):
+                poster_url = f"{self.poster_base_url}{tmdb_data['poster_path']}"
         
-        if tmdb_data and tmdb_data.get('overview'):
-            overview = tmdb_data['overview']
-            overview = await self.translate_to_romanian(overview)
+        # Pentru porn, folosește datele din Jellyfin
+        else:
+            # Traduce descrierea din Jellyfin
+            if overview and overview != 'Fără descriere disponibilă.':
+                overview = await self.translate_to_romanian(overview)
+            
+            # Folosește posterul din Jellyfin
+            if item_id and item.get('ImageTags', {}).get('Primary'):
+                poster_url = f"{settings['base_url']}/Items/{item_id}/Images/Primary?api_key={settings['api_key']}"
         
         if len(overview) > 1000:
             overview = overview[:997] + "..."
@@ -173,8 +190,7 @@ class JellyfinRecommendation(commands.Cog):
             color=color
         )
         
-        if tmdb_data and tmdb_data.get('poster_path'):
-            poster_url = f"{self.poster_base_url}{tmdb_data['poster_path']}"
+        if poster_url:
             embed.set_thumbnail(url=poster_url)
         
         embed.add_field(name="Tip", value=media_display, inline=True)
@@ -185,7 +201,6 @@ class JellyfinRecommendation(commands.Cog):
         if community_rating := item.get('CommunityRating'):
             embed.add_field(name="Rating", value=f"⭐ {community_rating:.1f}", inline=True)
 
-        item_id = item.get('Id')
         if item_id:
             web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
             server_name = settings.get('server_name', 'Freia [SERVER 2]')
@@ -390,17 +405,34 @@ class JellyfinRecommendation(commands.Cog):
             title = item.get('Name', 'Titlu necunoscut')
             year = item.get('ProductionYear', 'An necunoscut')
             is_movie = item.get('Type') == "Movie"
+            item_id = item.get('Id')
             
             media_display = "Film" if is_movie else "Serial"
             overview = item.get('Overview', 'Fără descriere disponibilă.')
+            poster_url = None
             
-            tmdb_data = None
-            if settings.get('tmdb_api_key'):
-                tmdb_data = await self.search_tmdb(title, year, is_movie, settings['tmdb_api_key'])
+            # Pentru anime, folosește TMDb
+            if media_type == 'anime':
+                tmdb_data = None
+                if settings.get('tmdb_api_key'):
+                    tmdb_data = await self.search_tmdb(title, year, is_movie, settings['tmdb_api_key'])
+                
+                if tmdb_data and tmdb_data.get('overview'):
+                    overview = tmdb_data['overview']
+                    overview = await self.translate_to_romanian(overview)
+                
+                if tmdb_data and tmdb_data.get('poster_path'):
+                    poster_url = f"{self.poster_base_url}{tmdb_data['poster_path']}"
             
-            if tmdb_data and tmdb_data.get('overview'):
-                overview = tmdb_data['overview']
-                overview = await self.translate_to_romanian(overview)
+            # Pentru porn, folosește datele din Jellyfin
+            else:
+                # Traduce descrierea din Jellyfin
+                if overview and overview != 'Fără descriere disponibilă.':
+                    overview = await self.translate_to_romanian(overview)
+                
+                # Folosește posterul din Jellyfin
+                if item_id and item.get('ImageTags', {}).get('Primary'):
+                    poster_url = f"{settings['base_url']}/Items/{item_id}/Images/Primary?api_key={settings['api_key']}"
             
             if len(overview) > 1000:
                 overview = overview[:997] + "..."
@@ -412,8 +444,7 @@ class JellyfinRecommendation(commands.Cog):
                 color=color
             )
             
-            if tmdb_data and tmdb_data.get('poster_path'):
-                poster_url = f"{self.poster_base_url}{tmdb_data['poster_path']}"
+            if poster_url:
                 embed.set_thumbnail(url=poster_url)
             
             embed.add_field(name="Tip", value=media_display, inline=True)
@@ -424,7 +455,6 @@ class JellyfinRecommendation(commands.Cog):
             if community_rating := item.get('CommunityRating'):
                 embed.add_field(name="Rating", value=f"⭐ {community_rating:.1f}", inline=True)
 
-            item_id = item.get('Id')
             if item_id:
                 web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
                 server_name = settings.get('server_name', 'Freia [SERVER 2]')
