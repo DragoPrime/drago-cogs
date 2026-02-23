@@ -241,7 +241,7 @@ Botul are nevoie de permisiunile:
 
 ## 👤 Autor
 
-**Drago Prime**
+**Drago Prime** / **ClaudeAI**
 
 ---
 
