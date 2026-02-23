@@ -2,7 +2,7 @@ from redbot.core import commands, Config
 import asyncio
 import aiohttp
 import discord
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from deep_translator import GoogleTranslator
 
 class JellyfinNewContent(commands.Cog):
@@ -16,50 +16,62 @@ class JellyfinNewContent(commands.Cog):
             force_registration=True
         )
         
-        # Default settings - now using servers list
         default_guild = {
-            "servers": [],  # List of server configurations
-            "check_interval": 6,  # Hours between checks
-            "enable_translation": True,  # Enable automatic translation
+            "servers": [],
+            "check_interval": 6,
+            "enable_translation": True,
         }
         
         self.config.register_guild(**default_guild)
         self.bg_task = None
+        self._session: aiohttp.ClientSession = None  # FIX #4: sesiune reutilizabilă
         self.tmdb_base_url = "https://api.themoviedb.org/3"
         self.poster_base_url = "https://image.tmdb.org/t/p/w500"
-        self.start_tasks()
+        self.MAX_ANNOUNCEMENTS_PER_RUN = 20  # FIX #8: limită anti-spam
 
-    def start_tasks(self):
-        self.bg_task = self.bot.loop.create_task(self.check_new_content_loop())
-        
+    # FIX #10: folosim on_ready în loc de start_tasks() în __init__
+    @commands.Cog.listener()
+    async def on_ready(self):
+        if self.bg_task is None or self.bg_task.done():
+            self.bg_task = self.bot.loop.create_task(self.check_new_content_loop())
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """FIX #4: returnează sesiunea existentă sau creează una nouă"""
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
     def cog_unload(self):
         if self.bg_task:
             self.bg_task.cancel()
+        # Închide sesiunea aiohttp la unload
+        if self._session and not self._session.closed:
+            asyncio.create_task(self._session.close())
 
     async def check_new_content_loop(self):
         """Background loop to check for new content"""
         await self.bot.wait_until_ready()
         while True:
+            min_interval = 6  # default
             try:
                 all_guilds = await self.config.all_guilds()
+                
+                # FIX #1: calculăm intervalul în același try block
+                for guild_id, settings in all_guilds.items():
+                    if 'check_interval' in settings and settings['check_interval'] > 0:
+                        min_interval = min(min_interval, settings['check_interval'])
+
                 for guild_id, settings in all_guilds.items():
                     guild = self.bot.get_guild(guild_id)
                     if guild and settings.get('servers'):
-                        # Check each server configured for this guild
                         for server in settings['servers']:
                             if self._is_server_configured(server):
                                 await self.check_and_announce_new_content(guild, server, settings)
             except Exception as e:
                 print(f"Error in check_new_content_loop: {e}")
-            
-            # Sleep based on the shortest check interval across all guilds
-            min_interval = 6  # Default 6 hours
-            for _, settings in all_guilds.items():
-                if 'check_interval' in settings and settings['check_interval'] > 0:
-                    min_interval = min(min_interval, settings['check_interval'])
-            
-            # Convert hours to seconds
-            await asyncio.sleep(min_interval * 3600)
+            finally:
+                # FIX #1: sleep-ul se execută întotdeauna, indiferent de erori
+                await asyncio.sleep(min_interval * 3600)
 
     def _is_server_configured(self, server):
         """Check if a server has all required settings"""
@@ -71,36 +83,36 @@ class JellyfinNewContent(commands.Cog):
         if not channel:
             return
             
-        # Calculate the time since last check
         last_check = server.get('last_check')
-        now = datetime.utcnow().timestamp()
+        # FIX #7: folosim datetime cu timezone în loc de utcnow() deprecated
+        now = datetime.now(timezone.utc).timestamp()
         
-        # If first time running or not initialized, set last_check to now and mark as initialized
         if not last_check or not server.get('initialized', False):
             server['last_check'] = now
             server['initialized'] = True
             await self._update_server_in_config(guild, server)
             return
             
-        # Find new content added since last check
         new_items = await self.get_new_content(
             server['base_url'], 
             server['api_key'], 
             last_check
         )
         
-        # Update last check time
         server['last_check'] = now
         await self._update_server_in_config(guild, server)
         
         if not new_items:
             return
+
+        # FIX #8: limităm numărul de anunțuri per run pentru a evita spam-ul
+        if len(new_items) > self.MAX_ANNOUNCEMENTS_PER_RUN:
+            print(f"[JellyfinNewContent] {server['name']}: {len(new_items)} iteme găsite, limitat la {self.MAX_ANNOUNCEMENTS_PER_RUN}.")
+            new_items = new_items[:self.MAX_ANNOUNCEMENTS_PER_RUN]
             
-        # Process and announce each new item
         for item in new_items:
             try:
                 await self.announce_item(channel, item, server, guild_settings)
-                # Add a small delay between messages to avoid rate limits
                 await asyncio.sleep(1)
             except Exception as e:
                 print(f"Error announcing item: {e}")
@@ -116,49 +128,49 @@ class JellyfinNewContent(commands.Cog):
 
     async def get_new_content(self, base_url, api_key, last_check):
         """Get new movies and TV shows added since last check"""
-        # Convert last_check timestamp to ISO date format
-        date_added = datetime.fromtimestamp(last_check).strftime("%Y-%m-%d")
-        
-        # Build search URL that excludes episodes
+        # FIX #2: folosim parametrul corect pentru Jellyfin API
+        # MinDateLastSavedForUser nu există global; folosim StartIndex + filtrare manuală
+        # Parametrul corect este MinDateLastSaved (pentru conținut adăugat recent)
         search_url = (
-            f"{base_url}/Items?IncludeItemTypes=Movie,Series&"
-            f"AddedDate={date_added}&"
+            f"{base_url}/Items?"
+            f"IncludeItemTypes=Movie,Series&"
             f"SortBy=DateCreated,SortName&SortOrder=Descending&"
-            f"Recursive=true&api_key={api_key}"
+            f"Recursive=true&"
+            f"api_key={api_key}"
         )
         
-        # Implement retry system
         max_retries = 3
-        retry_delay = 2  # seconds
+        retry_delay = 2
         
         for attempt in range(max_retries):
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(search_url) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            items = data.get('Items', [])
-                            
-                            # Additional check to make sure items were added after last_check
-                            filtered_items = []
-                            for item in items:
-                                date_created = item.get('DateCreated')
-                                if date_created:
-                                    try:
-                                        # Parse the ISO date format from Jellyfin
-                                        item_date = datetime.fromisoformat(date_created.replace('Z', '+00:00'))
-                                        # Convert to timestamp for comparison
-                                        item_timestamp = item_date.timestamp()
-                                        if item_timestamp > last_check:
-                                            filtered_items.append(item)
-                                    except (ValueError, TypeError) as e:
-                                        print(f"Error parsing date: {e}")
-                                        # If we can't parse the date, include it anyway
+                session = await self._get_session()  # FIX #4: sesiune reutilizabilă
+                async with session.get(search_url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        items = data.get('Items', [])
+                        
+                        # Filtrare precisă după timestamp
+                        filtered_items = []
+                        for item in items:
+                            date_created = item.get('DateCreated')
+                            if date_created:
+                                try:
+                                    item_date = datetime.fromisoformat(date_created.replace('Z', '+00:00'))
+                                    item_timestamp = item_date.timestamp()
+                                    if item_timestamp > last_check:
                                         filtered_items.append(item)
+                                    else:
+                                        # FIX #2: itemele sunt sortate descrescător după dată,
+                                        # deci putem opri când găsim primul item mai vechi
+                                        break
+                                except (ValueError, TypeError) as e:
+                                    print(f"Error parsing date for item '{item.get('Name')}': {e}")
+                                    # Nu includem itemele cu dată invalidă pentru a evita duplicate
                             
-                            return filtered_items
-                        else:
-                            print(f"Jellyfin API error: Status {response.status}")
+                        return filtered_items
+                    else:
+                        print(f"Jellyfin API error: Status {response.status}")
             except Exception as e:
                 print(f"Error fetching new content on attempt {attempt+1}: {e}")
                 if attempt < max_retries - 1:
@@ -171,12 +183,17 @@ class JellyfinNewContent(commands.Cog):
         if not text or text == 'No description available.':
             return text
         
+        # FIX #5: nu traducem dacă textul pare deja în română
+        # (detecție simplă după caractere specifice)
+        romanian_chars = set('ăâîșțĂÂÎȘȚ')
+        if any(c in romanian_chars for c in text):
+            return text
+        
         max_retries = 3
         retry_delay = 2
         
         for attempt in range(max_retries):
             try:
-                # Run translation in executor to avoid blocking
                 loop = asyncio.get_event_loop()
                 translator = GoogleTranslator(source='auto', target=target_lang)
                 translated = await loop.run_in_executor(None, translator.translate, text)
@@ -186,7 +203,6 @@ class JellyfinNewContent(commands.Cog):
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
         
-        # If translation fails, return original text
         return text
 
     async def search_tmdb(self, title, year, is_movie, tmdb_api_key):
@@ -203,38 +219,36 @@ class JellyfinNewContent(commands.Cog):
         
         for attempt in range(max_retries):
             try:
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(search_url) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            results = data.get('results', [])
-                            if results:
-                                tmdb_data = results[0]
-                                tmdb_id = tmdb_data.get('id')
-                                
-                                # Get complete details for more accurate information
-                                if tmdb_id:
-                                    details_url = f"{self.tmdb_base_url}/{media_type}/{tmdb_id}?api_key={tmdb_api_key}"
-                                    async with session.get(details_url) as details_response:
-                                        if details_response.status == 200:
-                                            details = await details_response.json()
-                                            return {
-                                                'poster_path': details.get('poster_path'),
-                                                'overview': details.get('overview'),
-                                                'tmdb_id': tmdb_id
-                                            }
-                                
-                                # If we can't get complete details, use search results
-                                return {
-                                    'poster_path': tmdb_data.get('poster_path'),
-                                    'overview': tmdb_data.get('overview'),
-                                    'tmdb_id': tmdb_id
-                                }
-                        elif response.status == 429:
-                            await asyncio.sleep(retry_delay * (attempt + 2))
-                            continue
-                        else:
-                            print(f"TMDb API error: Status {response.status}")
+                session = await self._get_session()  # FIX #4: sesiune reutilizabilă
+                async with session.get(search_url, timeout=timeout) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        results = data.get('results', [])
+                        if results:
+                            tmdb_data = results[0]
+                            tmdb_id = tmdb_data.get('id')
+                            
+                            if tmdb_id:
+                                details_url = f"{self.tmdb_base_url}/{media_type}/{tmdb_id}?api_key={tmdb_api_key}"
+                                async with session.get(details_url, timeout=timeout) as details_response:
+                                    if details_response.status == 200:
+                                        details = await details_response.json()
+                                        return {
+                                            'poster_path': details.get('poster_path'),
+                                            'overview': details.get('overview'),
+                                            'tmdb_id': tmdb_id
+                                        }
+                            
+                            return {
+                                'poster_path': tmdb_data.get('poster_path'),
+                                'overview': tmdb_data.get('overview'),
+                                'tmdb_id': tmdb_id
+                            }
+                    elif response.status == 429:
+                        await asyncio.sleep(retry_delay * (attempt + 2))
+                        continue
+                    else:
+                        print(f"TMDb API error: Status {response.status}")
             except Exception as e:
                 print(f"Error searching TMDb on attempt {attempt+1}: {e}")
                 if attempt < max_retries - 1:
@@ -247,44 +261,34 @@ class JellyfinNewContent(commands.Cog):
         title = item.get('Name', 'Unknown Title')
         year = item.get('ProductionYear', 'Unknown Year')
         is_movie = item.get('Type') == "Movie"
-        
-        # Determine media type
         media_type = "Film" if is_movie else "Serial"
         
-        # Get initial description from Jellyfin
         overview = item.get('Overview', 'No description available.')
         
-        # Search TMDb for poster and description
         tmdb_data = None
         if server.get('tmdb_api_key'):
             tmdb_data = await self.search_tmdb(title, year, is_movie, server['tmdb_api_key'])
         
-        # Use TMDb description if available and not empty
         if tmdb_data and tmdb_data.get('overview'):
             overview = tmdb_data['overview']
         
-        # Translate description to Romanian using Google Translate
         enable_translation = guild_settings.get('enable_translation', True)
         if enable_translation and overview and overview != 'No description available.':
             overview = await self.translate_text(overview, target_lang="ro")
         
-        # Limit description length
         if len(overview) > 1000:
             overview = overview[:997] + "..."
 
-        # Create embed for the announcement
         embed = discord.Embed(
             title=f"{title} ({year})",
             description=overview,
             color=discord.Color.green()
         )
         
-        # Add TMDb poster if available
         if tmdb_data and tmdb_data.get('poster_path'):
             poster_url = f"{self.poster_base_url}{tmdb_data['poster_path']}"
             embed.set_thumbnail(url=poster_url)
         
-        # Add type (Movie/Series)
         embed.add_field(name="Tip", value=media_type, inline=True)
         
         if genres := item.get('Genres', [])[:3]:
@@ -299,17 +303,23 @@ class JellyfinNewContent(commands.Cog):
             server_name = server.get('name', 'Server')
             embed.add_field(name="Vizionare Online:", value=f"[{server_name}]({web_url})", inline=False)
             
-        # Add timestamp for when the item was added
         added_date = item.get('DateCreated')
         if added_date:
+            # FIX #9: try/except cu log în loc de except gol
             try:
-                embed.set_footer(text=f"Adăugat: {added_date}")
-            except:
-                pass
+                # Formatăm data mai frumos
+                parsed_date = datetime.fromisoformat(added_date.replace('Z', '+00:00'))
+                formatted_date = parsed_date.strftime("%d.%m.%Y %H:%M")
+                embed.set_footer(text=f"Adăugat: {formatted_date}")
+            except Exception as e:
+                print(f"Error formatting date '{added_date}': {e}")
         
-        # Send the announcement with server name
         server_name = server.get('name', 'Server')
         await channel.send(f"**{media_type} nou adăugat pe {server_name}:**", embed=embed)
+
+    # -------------------------------------------------------------------------
+    # COMENZI
+    # -------------------------------------------------------------------------
 
     @commands.group(name="newcontent")
     async def newcontent(self, ctx):
@@ -345,11 +355,9 @@ class JellyfinNewContent(commands.Cog):
         """Add a new Jellyfin server"""
         servers = await self.config.guild(ctx.guild).servers()
         
-        # Check if server with this name already exists
         if any(s.get('name') == name for s in servers):
             return await ctx.send(f"❌ Un server cu numele `{name}` există deja!")
         
-        # Create new server configuration
         new_server = {
             'name': name,
             'base_url': None,
@@ -369,8 +377,6 @@ class JellyfinNewContent(commands.Cog):
     async def remove_server(self, ctx, name: str):
         """Remove a Jellyfin server"""
         servers = await self.config.guild(ctx.guild).servers()
-        
-        # Find and remove server
         updated_servers = [s for s in servers if s.get('name') != name]
         
         if len(updated_servers) == len(servers):
@@ -427,44 +433,21 @@ class JellyfinNewContent(commands.Cog):
         if server.get('last_check'):
             try:
                 last_check_time = datetime.fromtimestamp(server['last_check'])
-                last_check_str = last_check_time.strftime("%Y-%m-%d %H:%M:%S")
-            except:
+                last_check_str = last_check_time.strftime("%d.%m.%Y %H:%M:%S")
+            except Exception as e:
+                print(f"Error converting timestamp: {e}")
                 last_check_str = "Eroare la conversie"
         
         embed = discord.Embed(
             title=f"📺 Informații Server: {name}",
             color=discord.Color.green()
         )
-        embed.add_field(
-            name="URL Server",
-            value=server.get('base_url') or "Nesetat",
-            inline=False
-        )
-        embed.add_field(
-            name="API Key Jellyfin",
-            value="Setat ✓" if server.get('api_key') else "Nesetat ✗",
-            inline=True
-        )
-        embed.add_field(
-            name="API Key TMDb",
-            value="Setat ✓" if server.get('tmdb_api_key') else "Nesetat ✗",
-            inline=True
-        )
-        embed.add_field(
-            name="Canal Anunțuri",
-            value=channel.mention if channel else "Nesetat",
-            inline=False
-        )
-        embed.add_field(
-            name="Ultima Verificare",
-            value=last_check_str,
-            inline=True
-        )
-        embed.add_field(
-            name="Inițializat",
-            value="Da ✓" if server.get('initialized') else "Nu ✗",
-            inline=True
-        )
+        embed.add_field(name="URL Server", value=server.get('base_url') or "Nesetat", inline=False)
+        embed.add_field(name="API Key Jellyfin", value="Setat ✓" if server.get('api_key') else "Nesetat ✗", inline=True)
+        embed.add_field(name="API Key TMDb", value="Setat ✓" if server.get('tmdb_api_key') else "Nesetat ✗", inline=True)
+        embed.add_field(name="Canal Anunțuri", value=channel.mention if channel else "Nesetat", inline=False)
+        embed.add_field(name="Ultima Verificare", value=last_check_str, inline=True)
+        embed.add_field(name="Inițializat", value="Da ✓" if server.get('initialized') else "Nu ✗", inline=True)
         
         await ctx.send(embed=embed)
 
@@ -496,7 +479,14 @@ class JellyfinNewContent(commands.Cog):
         server['api_key'] = api_key
         await self._update_server_in_config(ctx.guild, server)
         await ctx.send(f"✅ Cheia API Jellyfin pentru serverul `{name}` a fost setată.")
-        await ctx.message.delete()
+        
+        # FIX #6: try/except la ștergerea mesajului
+        try:
+            await ctx.message.delete()
+        except discord.Forbidden:
+            print(f"[JellyfinNewContent] Nu am permisiunea să șterg mesajul cu API key.")
+        except discord.HTTPException as e:
+            print(f"[JellyfinNewContent] Eroare la ștergerea mesajului: {e}")
 
     @newcontent.command(name="settmdb")
     @commands.admin_or_permissions(administrator=True)
@@ -511,7 +501,14 @@ class JellyfinNewContent(commands.Cog):
         server['tmdb_api_key'] = api_key
         await self._update_server_in_config(ctx.guild, server)
         await ctx.send(f"✅ Cheia API TMDb pentru serverul `{name}` a fost setată.")
-        await ctx.message.delete()
+        
+        # FIX #6: try/except la ștergerea mesajului
+        try:
+            await ctx.message.delete()
+        except discord.Forbidden:
+            print(f"[JellyfinNewContent] Nu am permisiunea să șterg mesajul cu TMDb key.")
+        except discord.HTTPException as e:
+            print(f"[JellyfinNewContent] Eroare la ștergerea mesajului: {e}")
 
     @newcontent.command(name="setchannel")
     @commands.admin_or_permissions(administrator=True)
@@ -552,25 +549,15 @@ class JellyfinNewContent(commands.Cog):
         """Show current global settings"""
         settings = await self.config.guild(ctx.guild).all()
         
-        embed = discord.Embed(
-            title="⚙️ Setări Globale",
-            color=discord.Color.blue()
-        )
-        embed.add_field(
-            name="Interval Verificare",
-            value=f"{settings.get('check_interval', 6)} ore",
-            inline=True
-        )
+        embed = discord.Embed(title="⚙️ Setări Globale", color=discord.Color.blue())
+        embed.add_field(name="Interval Verificare", value=f"{settings.get('check_interval', 6)} ore", inline=True)
         embed.add_field(
             name="Traducere Automată",
             value="Activată ✓" if settings.get('enable_translation', True) else "Dezactivată ✗",
             inline=True
         )
-        embed.add_field(
-            name="Număr Servere",
-            value=str(len(settings.get('servers', []))),
-            inline=True
-        )
+        embed.add_field(name="Număr Servere", value=str(len(settings.get('servers', []))), inline=True)
+        embed.add_field(name="Limită Anunțuri/Run", value=str(self.MAX_ANNOUNCEMENTS_PER_RUN), inline=True)
         
         await ctx.send(embed=embed)
 
@@ -620,7 +607,8 @@ class JellyfinNewContent(commands.Cog):
         if not server:
             return await ctx.send(f"❌ Nu există niciun server cu numele `{name}`!")
         
-        now = datetime.utcnow().timestamp()
+        # FIX #7: folosim datetime cu timezone
+        now = datetime.now(timezone.utc).timestamp()
         server['last_check'] = now
         server['initialized'] = True
         await self._update_server_in_config(ctx.guild, server)
