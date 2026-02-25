@@ -52,11 +52,10 @@ class JellyfinNewContent(commands.Cog):
         """Background loop to check for new content"""
         await self.bot.wait_until_ready()
         while True:
-            min_interval = 6  # default
+            min_interval = 6
             try:
                 all_guilds = await self.config.all_guilds()
-                
-                # FIX #1: calculăm intervalul în același try block
+
                 for guild_id, settings in all_guilds.items():
                     if 'check_interval' in settings and settings['check_interval'] > 0:
                         min_interval = min(min_interval, settings['check_interval'])
@@ -68,54 +67,72 @@ class JellyfinNewContent(commands.Cog):
                             if self._is_server_configured(server):
                                 await self.check_and_announce_new_content(guild, server, settings)
             except Exception as e:
-                print(f"Error in check_new_content_loop: {e}")
+                self._log(f"Eroare în check_new_content_loop: {e}")
             finally:
-                # FIX #1: sleep-ul se execută întotdeauna, indiferent de erori
                 await asyncio.sleep(min_interval * 3600)
 
     def _is_server_configured(self, server):
         """Check if a server has all required settings"""
         return all(k in server and server[k] for k in ['name', 'base_url', 'api_key', 'announcement_channel_id'])
 
-    async def check_and_announce_new_content(self, guild, server, guild_settings):
-        """Check for new content and announce it for a specific server"""
+    def _log(self, msg):
+        """Centralized logger with consistent prefix"""
+        print(f"[JellyfinNewContent] {msg}")
+
+    async def check_and_announce_new_content(self, guild, server, guild_settings, debug_channel=None):
+        """Check for new content and announce it for a specific server.
+        
+        If debug_channel is provided, detailed logs are also sent there as Discord messages.
+        """
+        async def log(msg):
+            self._log(f"[{server['name']}] {msg}")
+            if debug_channel:
+                await debug_channel.send(f"`[{server['name']}]` {msg}")
+
         channel = guild.get_channel(server['announcement_channel_id'])
         if not channel:
+            await log(f"❌ Canalul de anunțuri (ID: {server['announcement_channel_id']}) nu a fost găsit în guild!")
             return
-            
+
         last_check = server.get('last_check')
-        # FIX #7: folosim datetime cu timezone în loc de utcnow() deprecated
         now = datetime.now(timezone.utc).timestamp()
-        
+
         if not last_check or not server.get('initialized', False):
+            await log("⚠️ Serverul nu este inițializat — setez timestamp-ul acum și ies. Folosește `forceinit` după configurare.")
             server['last_check'] = now
             server['initialized'] = True
             await self._update_server_in_config(guild, server)
             return
-            
+
+        last_check_dt = datetime.fromtimestamp(last_check).strftime("%d.%m.%Y %H:%M:%S")
+        await log(f"🔍 Caut conținut adăugat după: **{last_check_dt}**")
+
         new_items = await self.get_new_content(
-            server['base_url'], 
-            server['api_key'], 
-            last_check
+            server['base_url'],
+            server['api_key'],
+            last_check,
+            log_fn=log
         )
-        
+
         server['last_check'] = now
         await self._update_server_in_config(guild, server)
-        
+
         if not new_items:
+            await log("ℹ️ Niciun item nou găsit după filtrare.")
             return
 
-        # FIX #8: limităm numărul de anunțuri per run pentru a evita spam-ul
+        await log(f"✅ {len(new_items)} item(e) noi găsite.")
+
         if len(new_items) > self.MAX_ANNOUNCEMENTS_PER_RUN:
-            print(f"[JellyfinNewContent] {server['name']}: {len(new_items)} iteme găsite, limitat la {self.MAX_ANNOUNCEMENTS_PER_RUN}.")
+            await log(f"⚠️ Limitat la {self.MAX_ANNOUNCEMENTS_PER_RUN} anunțuri (din {len(new_items)} găsite).")
             new_items = new_items[:self.MAX_ANNOUNCEMENTS_PER_RUN]
-            
+
         for item in new_items:
             try:
                 await self.announce_item(channel, item, server, guild_settings)
                 await asyncio.sleep(1)
             except Exception as e:
-                print(f"Error announcing item: {e}")
+                await log(f"❌ Eroare la anunțarea itemului `{item.get('Name', '?')}`: {e}")
 
     async def _update_server_in_config(self, guild, updated_server):
         """Update a specific server in the config"""
@@ -126,11 +143,13 @@ class JellyfinNewContent(commands.Cog):
                 break
         await self.config.guild(guild).servers.set(servers)
 
-    async def get_new_content(self, base_url, api_key, last_check):
+    async def get_new_content(self, base_url, api_key, last_check, log_fn=None):
         """Get new movies and TV shows added since last check"""
-        # FIX #2: folosim parametrul corect pentru Jellyfin API
-        # MinDateLastSavedForUser nu există global; folosim StartIndex + filtrare manuală
-        # Parametrul corect este MinDateLastSaved (pentru conținut adăugat recent)
+        async def log(msg):
+            self._log(msg)
+            if log_fn:
+                await log_fn(msg)
+
         search_url = (
             f"{base_url}/Items?"
             f"IncludeItemTypes=Movie,Series&"
@@ -138,44 +157,89 @@ class JellyfinNewContent(commands.Cog):
             f"Recursive=true&"
             f"api_key={api_key}"
         )
-        
+
+        await log(f"📡 Request către Jellyfin: `{base_url}/Items?IncludeItemTypes=Movie,Series&...`")
+
         max_retries = 3
         retry_delay = 2
-        
+
         for attempt in range(max_retries):
             try:
-                session = await self._get_session()  # FIX #4: sesiune reutilizabilă
+                session = await self._get_session()
                 async with session.get(search_url) as response:
+                    await log(f"📶 Răspuns Jellyfin: HTTP {response.status}")
+
                     if response.status == 200:
                         data = await response.json()
                         items = data.get('Items', [])
-                        
-                        # Filtrare precisă după timestamp
+                        await log(f"📦 Total iteme returnate de Jellyfin (Movie + Series): **{len(items)}**")
+
+                        if not items:
+                            await log("⚠️ Jellyfin a returnat 0 iteme. Verifică dacă librăria are conținut și dacă API key-ul este corect.")
+                            return []
+
+                        # Afișăm primele 5 iteme pentru context
+                        preview = ", ".join(
+                            f"`{i.get('Name', '?')} ({i.get('Type', '?')}) — {i.get('DateCreated', '?')[:19]}`"
+                            for i in items[:5]
+                        )
+                        await log(f"🔎 Primele iteme din răspuns: {preview}")
+
+                        # Filtrare după timestamp
                         filtered_items = []
+                        skipped_old = 0
+                        skipped_date_error = 0
+
                         for item in items:
                             date_created = item.get('DateCreated')
-                            if date_created:
-                                try:
-                                    item_date = datetime.fromisoformat(date_created.replace('Z', '+00:00'))
-                                    item_timestamp = item_date.timestamp()
-                                    if item_timestamp > last_check:
-                                        filtered_items.append(item)
-                                    else:
-                                        # FIX #2: itemele sunt sortate descrescător după dată,
-                                        # deci putem opri când găsim primul item mai vechi
-                                        break
-                                except (ValueError, TypeError) as e:
-                                    print(f"Error parsing date for item '{item.get('Name')}': {e}")
-                                    # Nu includem itemele cu dată invalidă pentru a evita duplicate
-                            
+                            item_name = item.get('Name', '?')
+                            item_type = item.get('Type', '?')
+
+                            if not date_created:
+                                await log(f"⚠️ Itemul `{item_name}` nu are câmpul DateCreated — ignorat.")
+                                skipped_date_error += 1
+                                continue
+
+                            try:
+                                item_date = datetime.fromisoformat(date_created.replace('Z', '+00:00'))
+                                item_timestamp = item_date.timestamp()
+
+                                if item_timestamp > last_check:
+                                    await log(f"✅ NOU: `{item_name}` ({item_type}) — adăugat la {date_created[:19]}")
+                                    filtered_items.append(item)
+                                else:
+                                    skipped_old += 1
+                                    # Oprim după primul item mai vechi (lista e sortată descrescător)
+                                    break
+
+                            except (ValueError, TypeError) as e:
+                                await log(f"❌ Eroare la parsarea datei pentru `{item_name}`: {e} — ignorat.")
+                                skipped_date_error += 1
+
+                        await log(
+                            f"📊 Rezultat filtrare: **{len(filtered_items)} noi**, "
+                            f"{skipped_old} mai vechi (oprit la primul vechi), "
+                            f"{skipped_date_error} cu erori de dată."
+                        )
                         return filtered_items
+
+                    elif response.status == 401:
+                        await log("❌ HTTP 401 — API key Jellyfin invalid sau expirat!")
+                    elif response.status == 404:
+                        await log("❌ HTTP 404 — URL-ul serverului Jellyfin este greșit sau serverul nu rulează.")
                     else:
-                        print(f"Jellyfin API error: Status {response.status}")
+                        await log(f"❌ HTTP {response.status} — eroare necunoscută de la Jellyfin.")
+
+            except aiohttp.ClientConnectorError as e:
+                await log(f"❌ Nu mă pot conecta la Jellyfin (tentativa {attempt+1}/{max_retries}): {e}")
             except Exception as e:
-                print(f"Error fetching new content on attempt {attempt+1}: {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_delay)
-        
+                await log(f"❌ Eroare neașteptată (tentativa {attempt+1}/{max_retries}): {e}")
+
+            if attempt < max_retries - 1:
+                await log(f"⏳ Reîncerc în {retry_delay} secunde...")
+                await asyncio.sleep(retry_delay)
+
+        await log("❌ Toate tentativele au eșuat. Se returnează listă goală.")
         return []
 
     async def translate_text(self, text, target_lang="ro"):
@@ -344,6 +408,7 @@ class JellyfinNewContent(commands.Cog):
                 f"`{ctx.prefix}newcontent settings` - Arată setările globale\n\n"
                 "**Utilitare:**\n"
                 f"`{ctx.prefix}newcontent check <NUME>` - Verifică manual conținut nou pe un server\n"
+                f"`{ctx.prefix}newcontent debug <NUME>` - Verificare detaliată cu logging în canal (pentru depanare)\n"
                 f"`{ctx.prefix}newcontent reset <NUME>` - Resetează timestamp-ul de verificare\n"
                 f"`{ctx.prefix}newcontent forceinit <NUME>` - Forțează inițializarea fără anunțuri"
             )
@@ -581,6 +646,37 @@ class JellyfinNewContent(commands.Cog):
             await ctx.send("✅ Verificare completă.")
         except Exception as e:
             await ctx.send(f"❌ Eroare în timpul verificării: {e}")
+
+    @newcontent.command(name="debug")
+    @commands.admin_or_permissions(administrator=True)
+    async def debug_check(self, ctx, name: str):
+        """Rulează o verificare detaliată și afișează fiecare pas direct în canal"""
+        servers = await self.config.guild(ctx.guild).servers()
+        server = next((s for s in servers if s.get('name') == name), None)
+
+        if not server:
+            return await ctx.send(f"❌ Nu există niciun server cu numele `{name}`!")
+
+        if not self._is_server_configured(server):
+            return await ctx.send(
+                f"⚠️ Serverul `{name}` nu este configurat complet.\n"
+                f"Verifică cu `{ctx.prefix}newcontent serverinfo {name}`."
+            )
+
+        guild_settings = await self.config.guild(ctx.guild).all()
+
+        await ctx.send(
+            f"🛠️ **Mod debug activ pentru `{name}`**\n"
+            f"Voi afișa fiecare pas al verificării direct aici."
+        )
+
+        try:
+            await self.check_and_announce_new_content(
+                ctx.guild, server, guild_settings, debug_channel=ctx.channel
+            )
+            await ctx.send("✅ **Debug complet.** Verifică mesajele de mai sus pentru detalii.")
+        except Exception as e:
+            await ctx.send(f"❌ Eroare neașteptată în timpul debug-ului: `{e}`")
 
     @newcontent.command(name="reset")
     @commands.admin_or_permissions(administrator=True)
