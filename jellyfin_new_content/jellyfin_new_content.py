@@ -150,16 +150,21 @@ class JellyfinNewContent(commands.Cog):
             if log_fn:
                 await log_fn(msg)
 
+        # Convertim last_check în format ISO pentru Jellyfin
+        min_date = datetime.fromtimestamp(last_check, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.0000000Z")
+
         search_url = (
             f"{base_url}/Items?"
             f"IncludeItemTypes=Movie,Series&"
             f"SortBy=DateCreated,SortName&SortOrder=Descending&"
             f"Recursive=true&"
             f"Fields=DateCreated,Genres,Overview,CommunityRating,ProductionYear&"
+            f"MinDateLastSaved={min_date}&"
+            f"Limit=50&"
             f"api_key={api_key}"
         )
 
-        await log(f"📡 Request către Jellyfin: `{base_url}/Items?IncludeItemTypes=Movie,Series&...`")
+        await log(f"📡 Request către Jellyfin (din {min_date[:10]}): `{base_url}/Items?...`")
 
         max_retries = 3
         retry_delay = 2
