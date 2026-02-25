@@ -155,6 +155,7 @@ class JellyfinNewContent(commands.Cog):
             f"IncludeItemTypes=Movie,Series&"
             f"SortBy=DateCreated,SortName&SortOrder=Descending&"
             f"Recursive=true&"
+            f"Fields=DateCreated,Genres,Overview,CommunityRating,ProductionYear&"
             f"api_key={api_key}"
         )
 
