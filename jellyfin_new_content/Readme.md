@@ -202,6 +202,37 @@ Forțează inițializarea unui server setând timestamp-ul la momentul curent, f
 
 ---
 
+#### `debug <NUME>`
+Rulează o verificare completă și afișează **fiecare pas în timp real direct în canalul Discord** unde este tastată comanda. Util când `check` nu anunță nimic și vrei să înțelegi de ce.
+
+Informațiile afișate includ:
+- Timestamp-ul ultimei verificări (de la care se caută conținut nou)
+- URL-ul request-ului trimis către Jellyfin și codul HTTP primit
+- Numărul total de iteme returnate de Jellyfin
+- Primele iteme din răspuns (titlu, tip, dată adăugare)
+- Fiecare item nou detectat sau motivul pentru care a fost ignorat
+- Sumar final: câte iteme noi, câte mai vechi, câte cu erori de dată
+
+**Exemplu de output:**
+```
+[ServerulMeu] 🔍 Caut conținut adăugat după: 24.02.2026 21:00:00
+[ServerulMeu] 📡 Request către Jellyfin (din 2026-02-24): `.../Items?...`
+[ServerulMeu] 📶 Răspuns Jellyfin: HTTP 200
+[ServerulMeu] 📦 Total iteme returnate de Jellyfin: 3
+[ServerulMeu] 🔎 Primele iteme: `Attack on Titan (Series) — 2026-02-25T00:30:00`
+[ServerulMeu] ✅ NOU: `Attack on Titan (Series)` — adăugat la 2026-02-25T00:30:00
+[ServerulMeu] 📊 Rezultat: 1 noi, 2 mai vechi, 0 cu erori de dată.
+```
+
+> ⚠️ Folosește această comandă într-un canal privat sau de administrare — afișează informații tehnice despre server.
+
+**Exemplu:**
+```
+[p]newcontent debug ServerulMeu
+```
+
+---
+
 ## 📢 Exemplu anunț
 
 Când un film sau serial nou este adăugat pe Jellyfin, botul va posta un embed similar cu:
@@ -241,7 +272,7 @@ Botul are nevoie de permisiunile:
 
 ## 👤 Autor
 
-**Drago Prime** / **ClaudeAI**
+**Drago Prime**
 
 ---
 
