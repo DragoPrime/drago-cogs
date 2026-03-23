@@ -209,6 +209,52 @@ class JellyfinCog(commands.Cog):
     
         return False
     
+    async def _enable_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
+        """Reactivează un utilizator Jellyfin dezactivat"""
+        user_url = f"{server_url}/Users/{user_id}"
+        policy_url = f"{server_url}/Users/{user_id}/Policy"
+    
+        headers = {
+            "X-MediaBrowser-Token": token,
+            "Content-Type": "application/json"
+        }
+    
+        try:
+            async with aiohttp.ClientSession() as session:
+                # Obține informații despre utilizator
+                log.info(f"Obținere informații user pentru reactivare de la {user_url}")
+                async with session.get(user_url, headers=headers, timeout=10) as resp:
+                    log.info(f"Status GET user: {resp.status}")
+                    if resp.status == 200:
+                        user_data = await resp.json()
+                    
+                        # Obține politica din datele utilizatorului
+                        policy = user_data.get("Policy", {})
+                        log.info(f"Politică obținută, IsDisabled curent: {policy.get('IsDisabled', False)}")
+                    
+                        # Setează IsDisabled pe False pentru reactivare
+                        policy["IsDisabled"] = False
+                    
+                        # Actualizează politica
+                        log.info(f"Trimit UPDATE cu IsDisabled=False la {policy_url}")
+                        async with session.post(policy_url, json=policy, headers=headers, timeout=10) as update_resp:
+                            log.info(f"Status POST policy: {update_resp.status}")
+                            if update_resp.status == 204 or update_resp.status == 200:
+                                log.info("✅ Utilizator reactivat cu succes")
+                                return True
+                            else:
+                                error_text = await update_resp.text()
+                                log.error(f"POST a returnat {update_resp.status}: {error_text}")
+                                return False
+                    else:
+                        error_text = await resp.text()
+                        log.error(f"GET user a returnat {resp.status}: {error_text}")
+                        return False
+        except Exception as e:
+            log.error(f"Eroare la reactivarea utilizatorului: {e}", exc_info=True)
+    
+        return False
+    
     async def _check_inactive_users(self):
         """Verifică utilizatorii inactivi și îi gestionează"""
         log.info("=== ÎNCEPE VERIFICAREA INACTIVITĂȚII ===")
@@ -423,7 +469,10 @@ class JellyfinCog(commands.Cog):
             if action == "disabled":
                 dm_embed.add_field(
                     name="⚠️ Atenție",
-                    value="Contul tău a fost dezactivat din cauza inactivității. Va fi **șters permanent** în 30 de zile dacă nu este folosit.\n\nLoghează-te și vizionează ceva pentru a-l reactiva!",
+                    value=f"Contul tău a fost dezactivat din cauza inactivității. Va fi **șters permanent** în 30 de zile dacă nu este folosit.\n\n"
+                          f"**Cum îl reactivezi:**\n"
+                          f"Folosește comanda: `.activeaza {server_name} {jellyfin_username}`\n"
+                          f"sau loghează-te și vizionează ceva pentru reactivare automată!",
                     inline=False
                 )
             elif action == "deleted_no_login":
@@ -1153,3 +1202,120 @@ class JellyfinCog(commands.Cog):
                     embed.set_footer(text=f"Total conturi pe toate serverele: {total_accounts}")
         
         await ctx.send(embed=embed)
+    
+    @commands.command(name="activeaza", aliases=["reactivare", "enable"])
+    async def reactivate_user(self, ctx, nume_server: str, nume_utilizator: str):
+        """
+        Reactivează un utilizator Jellyfin dezactivat
+        
+        Poți reactiva doar propriile tale conturi dezactivate.
+        
+        Usage: .activeaza <nume_server> <nume_utilizator_jellyfin>
+        Exemplu: .activeaza server1 john123
+        """
+        # Verifică dacă comenzile sunt activate pe server
+        if not await self.config.guild(ctx.guild).enabled():
+            await ctx.send("❌ Comenzile Jellyfin nu sunt activate pe acest server Discord.")
+            return
+        
+        users_data = await self.config.users()
+        servers_data = await self.config.servers()
+        
+        # Verifică dacă serverul există
+        if nume_server not in servers_data:
+            await ctx.send(f"❌ Serverul **{nume_server}** nu există. Servere disponibile: {', '.join(servers_data.keys())}")
+            return
+        
+        user_id_str = str(ctx.author.id)
+        
+        # Verifică dacă utilizatorul Discord are conturi
+        if user_id_str not in users_data:
+            await ctx.send(f"❌ Nu ai niciun utilizator Jellyfin creat. Folosește `.creeaza` pentru a crea unul.")
+            return
+        
+        # Verifică dacă utilizatorul are conturi pe serverul specificat
+        if nume_server not in users_data[user_id_str]:
+            await ctx.send(f"❌ Nu ai niciun utilizator pe serverul **{nume_server}**.")
+            return
+        
+        # Verifică dacă utilizatorul Jellyfin specificat există
+        if nume_utilizator not in users_data[user_id_str][nume_server]:
+            available_users = list(users_data[user_id_str][nume_server].keys())
+            await ctx.send(f"❌ Nu ai un utilizator cu numele **{nume_utilizator}** pe serverul **{nume_server}**.\n"
+                          f"Utilizatorii tăi pe acest server: {', '.join(available_users)}")
+            return
+        
+        user_info = users_data[user_id_str][nume_server][nume_utilizator]
+        current_status = user_info.get("status", "active")
+        jellyfin_id = user_info.get("jellyfin_id")
+        
+        # Verifică statusul utilizatorului
+        if current_status == "active":
+            await ctx.send(f"✅ Utilizatorul **{nume_utilizator}** este deja activ!")
+            return
+        
+        if current_status == "deleted":
+            await ctx.send(f"❌ Utilizatorul **{nume_utilizator}** a fost șters și nu poate fi reactivat.\n"
+                          f"Te rog creează un cont nou cu `.creeaza {nume_server} <nume_nou> <parola>`")
+            return
+        
+        if not jellyfin_id:
+            await ctx.send(f"❌ Nu s-a putut găsi ID-ul utilizatorului Jellyfin. Te rog contactează administratorii.")
+            return
+        
+        # Utilizatorul este "disabled", procedăm la reactivare
+        server_config = servers_data[nume_server]
+        
+        # Obține token-ul de autentificare
+        token = await self._get_jellyfin_auth_token(
+            server_config["url"], 
+            server_config["admin_user"], 
+            server_config["admin_password"]
+        )
+        
+        if not token:
+            await ctx.send("❌ Nu s-a putut autentifica pe serverul Jellyfin. Te rog contactează administratorii.")
+            return
+        
+        # Trimite mesaj de procesare
+        processing_msg = await ctx.send(f"🔄 Reactivez utilizatorul **{nume_utilizator}** pe serverul **{nume_server}**...")
+        
+        # Reactivează utilizatorul
+        success = await self._enable_jellyfin_user(
+            server_config["url"],
+            token,
+            jellyfin_id
+        )
+        
+        if success:
+            # Actualizează statusul în baza de date
+            users_data[user_id_str][nume_server][nume_utilizator]["status"] = "active"
+            await self.config.users.set(users_data)
+            
+            # Creează embed de succes
+            embed = discord.Embed(
+                title="✅ Utilizator Reactivat cu Succes!",
+                color=0x00ff00,
+                description=f"Utilizatorul **{nume_utilizator}** a fost reactivat pe serverul **{nume_server}**"
+            )
+            
+            embed.add_field(name="🖥️ Server", value=nume_server, inline=True)
+            embed.add_field(name="👤 Utilizator", value=nume_utilizator, inline=True)
+            embed.add_field(name="📊 Status", value="🟢 Activ", inline=True)
+            embed.add_field(name="🌐 URL Server", value=server_config["url"], inline=False)
+            embed.add_field(
+                name="ℹ️ Notă",
+                value="Contul tău este acum activ! Poți să te conectezi și să vizionezi conținut.\n"
+                      "**Atenție:** Contul va fi din nou dezactivat după 30 de zile de inactivitate.",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Reactivat de {ctx.author}")
+            
+            await processing_msg.edit(content=None, embed=embed)
+            
+            log.info(f"Utilizator reactivat: {nume_utilizator} pe {nume_server} de către {ctx.author}")
+        else:
+            await processing_msg.edit(content=f"❌ Eroare la reactivarea utilizatorului. Te rog contactează administratorii.\n"
+                                             f"Verifică logs pentru mai multe detalii.")
+            log.error(f"Eșec la reactivarea utilizatorului {nume_utilizator} pe {nume_server}")
