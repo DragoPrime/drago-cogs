@@ -1,4 +1,4 @@
-# JellyfinManager - Actualizare cu Comandă Reset Utilizatori și Ștergere Automată Utilizatori Fără Login
+# JellyfinManager - Actualizări Complete
 
 ## 📝 Ce s-a adăugat
 
@@ -7,6 +7,30 @@ Am adăugat o nouă comandă pentru ștergerea completă a tuturor înregistrăr
 
 ### 2. Ștergere Automată Utilizatori Fără Login (NOU!)
 Plugin-ul verifică acum și utilizatorii care nu s-au conectat niciodată la serverul Jellyfin și îi șterge automat după **7 zile** de la creare.
+
+### 3. Comandă Reactivare Utilizatori (NOU!)
+Utilizatorii pot acum să își reactiveze singuri conturile dezactivate folosind comanda `.activeaza`.
+
+## 📋 Lista Completă de Comenzi
+
+### Comenzi pentru Utilizatori
+- `.creeaza <server> <username> <parola>` - Creează un cont Jellyfin nou
+- `.activeaza <server> <username>` - Reactivează un cont dezactivat (doar propriile conturi)
+- `.utilizator <@user sau username>` - Verifică informații despre utilizatori
+
+### Comenzi pentru Administratori
+- `.server addserver <nume> <url> <admin> <parola> [rol]` - Adaugă server Jellyfin
+- `.server removeserver <nume>` - Elimină un server
+- `.server listservers` - Listează serverele configurate
+- `.server enable` - Activează comenzile pe serverul Discord
+- `.server disable` - Dezactivează comenzile pe serverul Discord
+- `.server setrole <server> <rol>` - Setează rol pentru un server
+- `.server removerole <server>` - Elimină rolul pentru un server
+- `.server setchannel <#canal>` - Setează canalul pentru notificări
+- `.server removechannel` - Elimină canalul de notificări
+- `.server togglecleanup` - Activează/dezactivează cleanup automat
+- `.server checkcleanup` - Execută manual verificarea cleanup (testare)
+- `.server resetusers` - Șterge toate înregistrările de utilizatori (IREVERSIBIL)
 
 ## 🆕 Funcționalități Noi
 
@@ -171,6 +195,101 @@ Ziua 7:
   - Admin primește notificare în canal
 ```
 
+### D. Comandă: `.activeaza` - Reactivare Utilizatori Dezactivați
+
+#### Descriere
+Permite utilizatorilor să își reactiveze singuri conturile Jellyfin care au fost dezactivate din cauza inactivității.
+
+#### Utilizare
+
+```
+.activeaza <nume_server> <nume_utilizator_jellyfin>
+```
+
+**Exemple:**
+```
+.activeaza server1 john123
+.activeaza jellyfin_main my_username
+```
+
+**Alias-uri:** `.reactivare`, `.enable`
+
+#### Cum funcționează
+
+1. **Verificare permisiuni**: 
+   - Doar proprietarul contului Discord poate reactiva propriile conturi
+   - Nu poți reactiva conturile altora
+
+2. **Verificare status**:
+   - ✅ Contul trebuie să fie în status "disabled"
+   - ❌ Conturile "active" nu pot fi reactivate (sunt deja active)
+   - ❌ Conturile "deleted" nu pot fi reactivate (trebuie creat cont nou)
+
+3. **Procesare**:
+   - Botul se conectează la serverul Jellyfin
+   - Schimbă IsDisabled de la True la False
+   - Actualizează status-ul în baza de date
+   - Trimite confirmare
+
+#### Exemple de Utilizare
+
+**Succes:**
+```
+User: .activeaza server1 myuser
+
+Bot: 🔄 Reactivez utilizatorul myuser pe serverul server1...
+
+Bot: ✅ Utilizator Reactivat cu Succes!
+     
+     🖥️ Server: server1
+     👤 Utilizator: myuser
+     📊 Status: 🟢 Activ
+     🌐 URL Server: http://jellyfin.example.com
+     
+     ℹ️ Notă:
+     Contul tău este acum activ! Poți să te conectezi și să vizionezi conținut.
+     Atenție: Contul va fi din nou dezactivat după 30 de zile de inactivitate.
+```
+
+**Erori posibile:**
+
+```
+# Cont deja activ
+❌ Utilizatorul myuser este deja activ!
+
+# Cont șters
+❌ Utilizatorul myuser a fost șters și nu poate fi reactivat.
+Te rog creează un cont nou cu `.creeaza server1 <nume_nou> <parola>`
+
+# Utilizator inexistent
+❌ Nu ai un utilizator cu numele myuser pe serverul server1.
+Utilizatorii tăi pe acest server: user1, user2
+
+# Server inexistent
+❌ Serverul server2 nu există. Servere disponibile: server1, jellyfin_main
+```
+
+#### Securitate
+
+✅ **Protecție**: Utilizatorii pot reactiva doar propriile conturi
+✅ **Validare**: Verifică toate condițiile înainte de reactivare
+✅ **Logging**: Toate reactivările sunt înregistrate în logs
+✅ **Feedback**: Utilizatorul primește confirmări clare
+
+#### Integrare cu Notificări
+
+Când un cont este dezactivat, utilizatorul primește în DM instrucțiuni clare:
+
+```
+⚠️ Atenție
+Contul tău a fost dezactivat din cauza inactivității. 
+Va fi șters permanent în 30 de zile dacă nu este folosit.
+
+Cum îl reactivezi:
+Folosește comanda: .activeaza server1 myuser
+sau loghează-te și vizionează ceva pentru reactivare automată!
+```
+
 ## 🆕 Comandă: `.server resetusers`
 
 ## 📋 Instalare
@@ -254,7 +373,7 @@ Comanda folosește:
 4. **Logging detaliat**: Toate acțiunile sunt înregistrate
 5. **Nu afectează utilizatorii activi**: Doar cei fără login sunt verificați
 
-## 🔄 Flux Complet de Verificare
+## 🔄 Flux Complet de Verificare și Acțiuni Utilizator
 
 ```
 Verificare Zilnică
@@ -274,6 +393,14 @@ Are last_activity?
              ├─ DA → 🗑️ ȘTERGE (inactivitate)
              └─ NU → Verifică > 30 zile?
                       ├─ DA → 🟡 DEZACTIVEAZĂ
+                      │        ↓
+                      │   Trimite DM cu instrucțiuni
+                      │   User poate folosi: .activeaza
+                      │        ↓
+                      │   User execută .activeaza?
+                      │        ├─ DA → 🟢 REACTIVAT
+                      │        └─ NU → Rămâne dezactivat
+                      │
                       └─ NU → ✅ Păstrează
 ```
 
@@ -300,6 +427,78 @@ Are last_activity?
 3. **Management simplificat**: Administratorii nu trebuie să șteargă manual
 4. **Transparență**: Toată lumea este informată
 5. **Flexibilitate**: Utilizatorii pot crea conturi noi când au nevoie
+6. **Self-service**: Utilizatorii pot reactiva propriile conturi fără ajutorul adminilor
+
+## 📖 Scenarii Complete de Utilizare
+
+### Scenariu 1: Utilizator Inactiv - Reactivare Reușită
+
+```
+Ziua 0: John creează cont "john123" pe server1
+Ziua 1-29: John vizionează filme regulat
+Ziua 30-59: John pleacă în vacanță, nu se conectează
+
+Ziua 60:
+  🟡 Botul dezactivează automat "john123"
+  📧 John primește DM:
+     "Contul tău a fost dezactivat. 
+      Folosește: .activeaza server1 john123"
+
+Ziua 61:
+  John: .activeaza server1 john123
+  Bot: ✅ Utilizator Reactivat cu Succes!
+  🟢 Contul "john123" este din nou activ
+
+Ziua 62+:
+  John continuă să folosească contul normal
+```
+
+### Scenariu 2: Utilizator cu Multiple Conturi
+
+```
+Mary creează:
+  - "mary_films" pe server1 (îl folosește)
+  - "mary_test" pe server1 (nu se conectează niciodată)
+
+Ziua 7:
+  🚫 "mary_test" șters automat (niciodată conectat)
+  📧 Mary primește notificare
+  ✅ "mary_films" rămâne activ
+
+Ziua 30+:
+  Mary nu mai folosește "mary_films"
+  
+Ziua 60:
+  🟡 "mary_films" dezactivat
+  
+Ziua 61:
+  Mary: .activeaza server1 mary_films
+  Bot: ✅ Reactivat!
+```
+
+### Scenariu 3: Utilizator Uită Complet de Cont
+
+```
+Bob creează "bob_movies"
+Nu se conectează niciodată
+
+Ziua 60:
+  🟡 Dezactivat automat
+  📧 Bob primește DM cu instrucțiuni
+  Bob ignoră mesajul
+
+Ziua 90:
+  🗑️ "bob_movies" șters definitiv
+  📧 Bob primește notificare de ștergere
+  
+Ziua 91:
+  Bob vrea să revină
+  Bob: .activeaza server1 bob_movies
+  Bot: ❌ Contul a fost șters, creează unul nou
+  
+  Bob: .creeaza server1 bob_new parola123
+  Bot: ✅ Cont nou creat!
+```
 
 ## ⚡ Quick Start
 
