@@ -471,7 +471,7 @@ class JellyfinCog(commands.Cog):
                     name="⚠️ Atenție",
                     value=f"Contul tău a fost dezactivat din cauza inactivității. Va fi **șters permanent** în 30 de zile dacă nu este folosit.\n\n"
                           f"**Cum îl reactivezi:**\n"
-                          f"Folosește comanda: `.activeaza {server_name} {jellyfin_username}`\n"
+                          f"Folosește comanda: `.activeaza {server_name} {jellyfin_username}` pe un canal de pe server\n"
                           f"sau loghează-te și vizionează ceva pentru reactivare automată!",
                     inline=False
                 )
