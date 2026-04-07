@@ -1,21 +1,56 @@
-# JellyfinManager - Actualizări Complete
+# JellyfinManager - Plugin Simplificat pentru Cleanup Automat
 
-## 📝 Ce s-a adăugat
+## 📝 Modificări Finale
 
-### 1. Comandă Reset Utilizatori
-Am adăugat o nouă comandă pentru ștergerea completă a tuturor înregistrărilor de utilizatori din baza de date a botului.
+Plugin-ul a fost simplificat pentru a gestiona automat utilizatorii inactivi fără intervenție manuală.
 
-### 2. Ștergere Automată Utilizatori Fără Login (NOU!)
-Plugin-ul verifică acum și utilizatorii care nu s-au conectat niciodată la serverul Jellyfin și îi șterge automat după **7 zile** de la creare.
+### ✅ Ce s-a păstrat:
+- Ștergere automată după **90 de zile** de inactivitate
+- Ștergere automată după **7 zile** pentru utilizatori care nu s-au conectat niciodată
+- Notificări prin DM și canal pentru utilizatori șterși
+- Tracking complet al utilizatorilor
+- Eliminare automată a rolurilor când utilizatorul părăsește serverul Discord
 
-### 3. Comandă Reactivare Utilizatori (NOU!)
-Utilizatorii pot acum să își reactiveze singuri conturile dezactivate folosind comanda `.activeaza`.
+### ❌ Ce s-a eliminat:
+- Funcționalitatea de dezactivare (30 zile)
+- Comanda `.activeaza` pentru reactivare
+- Mesajele de notificare pentru dezactivare
+- Logica complexă de stări (activ/dezactivat/șters)
 
-## 📋 Lista Completă de Comenzi
+## 🎯 Sistem Simplificat
+
+### Reguli de Inactivitate
+
+| Situație | Perioadă | Acțiune |
+|----------|----------|---------|
+| **Utilizator nou fără login** | 7 zile | 🚫 **Șters** (niciodată conectat) |
+| **Utilizator inactiv** | 90 zile | 🗑️ **Șters** (inactivitate prelungită) |
+
+### Flux Complet
+
+```
+Verificare Zilnică (24h)
+    ↓
+Pentru fiecare utilizator:
+    ↓
+Are last_activity?
+    ├─ NU → Verifică created_at
+    │        ↓
+    │    > 7 zile de la creare?
+    │        ├─ DA → 🚫 ȘTERGE (never_logged_in)
+    │        └─ NU → ✅ Păstrează
+    │
+    └─ DA → Calculează zile de inactivitate
+             ↓
+         > 90 zile?
+             ├─ DA → 🗑️ ȘTERGE
+             └─ NU → ✅ Păstrează
+```
+
+## 📋 Comenzi Disponibile
 
 ### Comenzi pentru Utilizatori
 - `.creeaza <server> <username> <parola>` - Creează un cont Jellyfin nou
-- `.activeaza <server> <username>` - Reactivează un cont dezactivat (doar propriile conturi)
 - `.utilizator <@user sau username>` - Verifică informații despre utilizatori
 
 ### Comenzi pentru Administratori
@@ -32,496 +67,284 @@ Utilizatorii pot acum să își reactiveze singuri conturile dezactivate folosin
 - `.server checkcleanup` - Execută manual verificarea cleanup (testare)
 - `.server resetusers` - Șterge toate înregistrările de utilizatori (IREVERSIBIL)
 
-## 🆕 Funcționalități Noi
+## 🔔 Notificări
 
-### A. Comandă: `.server resetusers`
+### Notificare Ștergere (90 zile inactivitate)
 
-### Descriere
-Această comandă șterge **TOATE** înregistrările de utilizatori din baza de date a botului (tracking-ul local). 
-
-### ⚠️ IMPORTANT
-- **NU** șterge utilizatorii de pe serverele Jellyfin propriu-zise
-- Șterge doar tracking-ul din baza de date a botului
-- **Această acțiune este IREVERSIBILĂ**
-
-### Utilizare
-
+**DM Privat:**
 ```
-.server resetusers
-```
+🗑️ Contul tău Jellyfin a fost șters
 
-### Cum funcționează
+🖥️ Server: server_name
+👤 Username Jellyfin: username
+⏰ Zile de inactivitate: 90+
+📅 Ultima activitate: DD.MM.YYYY HH:MM
 
-1. **Afișare statistici**: Botul va afișa un embed cu:
-   - Numărul total de utilizatori Discord trackați
-   - Numărul total de conturi Jellyfin
-   - Toate datele care vor fi șterse
-
-2. **Cerere confirmare**: Utilizatorul trebuie să scrie exact `CONFIRM DELETE ALL` în 30 de secunde
-
-3. **Execuție**: Dacă se confirmă, botul va:
-   - Șterge complet baza de date users
-   - Afișa un embed de confirmare cu statisticile ștergerii
-   - Loga acțiunea în console
-
-### Permisiuni
-- **Doar owner-ul botului** poate folosi această comandă
-- Se folosește decorator-ul `@checks.is_owner()`
-
-### Exemplu de Utilizare
-
-```
-Admin: .server resetusers
-
-Bot: [Afișează embed de avertizare]
-     📊 Ce va fi șters:
-     • X utilizatori Discord
-     • Y conturi Jellyfin
-     • Tot istoricul de tracking
-     
-     ✅ Pentru a confirma:
-     Scrie `CONFIRM DELETE ALL` în următoarele 30 de secunde
-
-Admin: CONFIRM DELETE ALL
-
-Bot: ✅ Reset Complet Efectuat
-     Toate înregistrările de utilizatori au fost șterse din baza de date
+🗑️ Cont șters
+Contul tău a fost șters definitiv din cauza inactivității 
+prelungite (90+ zile). Dacă dorești un nou cont, contactează 
+administratorii.
 ```
 
-### Cazuri de Timeout
-
-Dacă utilizatorul nu confirmă în 30 de secunde:
+**În canal:**
 ```
-Bot: ❌ Operațiune anulată - timeout.
-```
+🗑️ Utilizator șters
 
-### Dacă nu există utilizatori
-
-```
-Bot: ✅ Nu există utilizatori în baza de date.
+👤 Utilizator Discord: @Username
+🎬 Utilizator Jellyfin: username
+🖥️ Server: server_name
+📅 Ultima activitate: DD.MM.YYYY HH:MM
+⏰ Zile inactive: 90+
 ```
 
-### B. Ștergere Automată Utilizatori Fără Login
+### Notificare Ștergere (7 zile fără login)
 
-#### Descriere
-Plugin-ul verifică automat utilizatorii care nu s-au conectat **niciodată** la serverul Jellyfin și îi șterge după 7 zile de la creare.
-
-#### Cum funcționează
-
-1. **Verificare zilnică**: Task-ul automat verifică toți utilizatorii
-2. **Detectare utilizatori fără login**: 
-   - Dacă un utilizator nu are istoric de vizionare (LastActivityDate == null)
-   - Și nu are LastLoginDate
-   - Plugin-ul folosește data creării contului (created_at)
-3. **Ștergere după 7 zile**:
-   - Dacă au trecut 7+ zile de la creare
-   - ȘI utilizatorul nu s-a conectat niciodată
-   - Contul este șters automat
-
-#### Reguli de Inactivitate (actualizate)
-
-| Situație | Perioadă | Acțiune |
-|----------|----------|---------|
-| **Utilizator nou fără login** | 7 zile | 🚫 **Șters** (niciodată conectat) |
-| Utilizator inactiv | 30 zile | 🟡 **Dezactivat** |
-| Utilizator dezactivat | 60 zile (total) | 🗑️ **Șters** (inactivitate prelungită) |
-
-#### Notificări
-
-Când un utilizator este șters pentru că nu s-a conectat niciodată, primește:
-
-**DM Personal:**
+**DM Privat:**
 ```
 🚫 Contul tău Jellyfin a fost șters (niciodată conectat)
 
-🖥️ Server: [nume_server]
-👤 Username Jellyfin: [username]
-📅 Creat la: [data]
+🖥️ Server: server_name
+👤 Username Jellyfin: username
+📅 Creat la: DD.MM.YYYY HH:MM
 ⏰ Zile de la creare: 7+
 
 🚫 Cont șters - Niciodată folosit
 Contul tău a fost șters deoarece nu te-ai conectat 
 la el în 7 zile de la creare.
 
-Dacă ai nevoie de un nou cont, te rog contactează 
-administratorii.
+Dacă ai nevoie de un nou cont, contactează administratorii.
 ```
 
-**În canalul de notificări:**
+**În canal:**
 ```
 🚫 Utilizator șters (niciodată conectat)
 
 👤 Utilizator Discord: @Username
-🎬 Utilizator Jellyfin: username_jellyfin
+🎬 Utilizator Jellyfin: username
 🖥️ Server: server_name
-📅 Creat la: [data]
+📅 Creat la: DD.MM.YYYY HH:MM
 ⏰ Zile de la creare: 7
 
 ℹ️ Notă: Utilizatorul nu s-a conectat niciodată 
 (șters după 7 zile)
 ```
 
-#### Avantaje
+## 🎭 Gestionarea Rolurilor
 
-✅ **Curățare automată**: Elimină conturile neutilizate rapid
-✅ **Economie de resurse**: Nu ocupă spațiu cu conturi inactive
-✅ **Transparență**: Utilizatorii sunt notificați
-✅ **Flexibilitate**: Pot crea un cont nou dacă au nevoie
+### Eliminare Automată când Nu Mai Există Conturi Active
 
-### C. Cazuri de Utilizare
+Plugin-ul elimină automat rolurile Discord când un utilizator **nu mai are niciun cont activ** pe un server Jellyfin:
 
-#### Caz 1: Utilizator creează 2 conturi, dar folosește doar unul
+**Când se elimină rolul:**
+1. ✅ Un utilizator are conturi pe "server1" Jellyfin
+2. ✅ Utilizatorul primește rolul `@JellyfinServer1` când creează primul cont
+3. ⏰ Toate conturile utilizatorului pe "server1" sunt șterse (inactivitate/fără login)
+4. 🎭 **Rolul `@JellyfinServer1` este eliminat automat**
+
+**Exemplu:**
+```
+User creează 2 conturi pe server1:
+  - "username1" → activ
+  - "username2" → activ
+  Rol: ✅ @JellyfinServer1
+
+Ziua 7: "username2" șters (fără login)
+  Conturi rămase: "username1" (activ)
+  Rol: ✅ Păstrat (mai are 1 cont activ)
+
+Ziua 90: "username1" șters (inactivitate)
+  Conturi rămase: 0 active
+  Rol: 🎭 Eliminat automat!
+```
+
+**Logging:**
+```
+Verificare roluri pentru user 123456789 pe server1
+  Conturi active: 0 din 2
+  ⚠️ Nu mai are conturi active, eliminare rol...
+  ✅ Rol JellyfinServer1 eliminat din My Discord Server
+```
+
+### Când Utilizatorul Părăsește Serverul Discord
+
+Când un utilizator părăsește complet serverul Discord:
+1. ✅ Discord elimină **automat toate rolurile** (comportament nativ)
+2. ✅ Conturile Jellyfin rămân active pe server
+3. ✅ Event-ul este logat pentru audit
+
+**Logging:**
+```
+=== MEMBRU PĂRĂSEȘTE SERVERUL ===
+Utilizator: John#1234 (ID: 123456789)
+Guild: My Discord Server
+Discord va elimina automat toate rolurile
+```
+
+## 📊 Scenarii de Utilizare
+
+### Scenariu 1: Utilizator Activ
 
 ```
-Ziua 0: User creează "username1" și "username2"
-Ziua 0: User se conectează la "username1" ✅
-Ziua 0: User NU se conectează la "username2" ❌
+Ziua 0: User creează "username" și se conectează
+Ziua 1-89: User vizionează filme regulat
 
-Ziua 7: 
-  - "username1" rămâne activ (are activitate)
-  - "username2" este șters automat (7 zile fără login)
-  - User primește notificare despre "username2"
+Status: ✅ Cont activ, nicio acțiune
 ```
 
-#### Caz 2: Utilizator creează cont dar uită de el
+### Scenariu 2: Utilizator Creează Cont dar Nu-l Folosește
 
 ```
 Ziua 0: User creează "test_account"
 Ziua 0-6: User nu se conectează niciodată
 
 Ziua 7:
-  - "test_account" este șters automat
-  - User primește DM cu notificarea
-  - Admin primește notificare în canal
+  🚫 "test_account" șters automat
+  📧 User primește DM
+  📢 Admin primește notificare în canal
 ```
 
-### D. Comandă: `.activeaza` - Reactivare Utilizatori Dezactivați
-
-#### Descriere
-Permite utilizatorilor să își reactiveze singuri conturile Jellyfin care au fost dezactivate din cauza inactivității.
-
-#### Utilizare
+### Scenariu 3: Utilizator Inactiv Prelungit
 
 ```
-.activeaza <nume_server> <nume_utilizator_jellyfin>
+Ziua 0-30: User folosește contul normal
+Ziua 31-89: User nu se mai conectează
+
+Ziua 90:
+  🗑️ Cont șters automat
+  📧 User primește DM
+  📢 Admin primește notificare în canal
 ```
 
-**Exemple:**
-```
-.activeaza server1 john123
-.activeaza jellyfin_main my_username
-```
-
-**Alias-uri:** `.reactivare`, `.enable`
-
-#### Cum funcționează
-
-1. **Verificare permisiuni**: 
-   - Doar proprietarul contului Discord poate reactiva propriile conturi
-   - Nu poți reactiva conturile altora
-
-2. **Verificare status**:
-   - ✅ Contul trebuie să fie în status "disabled"
-   - ❌ Conturile "active" nu pot fi reactivate (sunt deja active)
-   - ❌ Conturile "deleted" nu pot fi reactivate (trebuie creat cont nou)
-
-3. **Procesare**:
-   - Botul se conectează la serverul Jellyfin
-   - Schimbă IsDisabled de la True la False
-   - Actualizează status-ul în baza de date
-   - Trimite confirmare
-
-#### Exemple de Utilizare
-
-**Succes:**
-```
-User: .activeaza server1 myuser
-
-Bot: 🔄 Reactivez utilizatorul myuser pe serverul server1...
-
-Bot: ✅ Utilizator Reactivat cu Succes!
-     
-     🖥️ Server: server1
-     👤 Utilizator: myuser
-     📊 Status: 🟢 Activ
-     🌐 URL Server: http://jellyfin.example.com
-     
-     ℹ️ Notă:
-     Contul tău este acum activ! Poți să te conectezi și să vizionezi conținut.
-     Atenție: Contul va fi din nou dezactivat după 30 de zile de inactivitate.
-```
-
-**Erori posibile:**
+### Scenariu 4: Utilizator Fără Conturi Active
 
 ```
-# Cont deja activ
-❌ Utilizatorul myuser este deja activ!
+User are 2 conturi pe server1:
+  - "account1" → Activ, rol @JellyfinServer1 atribuit
+  - "account2" → Activ
 
-# Cont șters
-❌ Utilizatorul myuser a fost șters și nu poate fi reactivat.
-Te rog creează un cont nou cu `.creeaza server1 <nume_nou> <parola>`
+Ziua 90: "account1" șters (inactivitate)
+  Conturi active: 1 ("account2")
+  Rol: ✅ Păstrat
 
-# Utilizator inexistent
-❌ Nu ai un utilizator cu numele myuser pe serverul server1.
-Utilizatorii tăi pe acest server: user1, user2
-
-# Server inexistent
-❌ Serverul server2 nu există. Servere disponibile: server1, jellyfin_main
+Ziua 91: "account2" șters (inactivitate)
+  Conturi active: 0
+  Rol: 🎭 @JellyfinServer1 eliminat automat
+  
+  📝 Log: "Nu mai are conturi active, eliminare rol..."
 ```
 
-#### Securitate
-
-✅ **Protecție**: Utilizatorii pot reactiva doar propriile conturi
-✅ **Validare**: Verifică toate condițiile înainte de reactivare
-✅ **Logging**: Toate reactivările sunt înregistrate în logs
-✅ **Feedback**: Utilizatorul primește confirmări clare
-
-#### Integrare cu Notificări
-
-Când un cont este dezactivat, utilizatorul primește în DM instrucțiuni clare:
+### Scenariu 5: Utilizator Părăsește Serverul Discord
 
 ```
-⚠️ Atenție
-Contul tău a fost dezactivat din cauza inactivității. 
-Va fi șters permanent în 30 de zile dacă nu este folosit.
+User are cont Jellyfin cu rol @JellyfinServer1
+User părăsește serverul Discord
 
-Cum îl reactivezi:
-Folosește comanda: .activeaza server1 myuser
-sau loghează-te și vizionează ceva pentru reactivare automată!
+Automat:
+  🎭 Discord elimină toate rolurile (inclusiv @JellyfinServer1)
+  📝 Acțiunea este logată
+  ✅ Cont Jellyfin rămâne activ pe server
 ```
 
-## 🆕 Comandă: `.server resetusers`
+## ⚙️ Instalare
 
-## 📋 Instalare
-
-1. Copiază directorul `jellyfinmanager` în directorul de cog-uri al botului tău Red
-2. Reîncarcă cog-ul:
+1. Copiază directorul `jellyfinmanager` în directorul de cog-uri al botului Red
+2. Încarcă cog-ul:
    ```
-   [p]reload jellyfinmanager
-   ```
-   SAU
-   ```
-   [p]unload jellyfinmanager
    [p]load jellyfinmanager
    ```
 
-## 🔧 Structura Fișierelor
+## 🚀 Configurare Inițială
 
-```
-jellyfinmanager/
-├── __init__.py          # Fișier de inițializare
-├── info.json            # Informații despre cog
-└── jellyfinmanager.py   # Codul principal (actualizat cu resetusers)
-```
+```bash
+# 1. Adaugă server Jellyfin
+[p]server addserver server1 http://jellyfin.example.com admin password123 @JellyfinUsers
 
-## 📊 Logging
+# 2. Activează comenzile pe server Discord
+[p]server enable
 
-Comanda va loga următoarele informații:
-```python
-log.info(f"Reset complet utilizatori efectuat de {ctx.author} - {total_users} conturi șterse")
-```
+# 3. Setează canal pentru notificări
+[p]server setchannel #jellyfin-logs
 
-## ⚙️ Implementare Tehnică
-
-### Ștergere Utilizatori Fără Login
-
-```python
-# Verificare în _check_inactive_users()
-if not last_activity:
-    # Utilizatorul nu are istoric de vizionare
-    created_at = datetime.fromisoformat(user_data.get("created_at"))
-    days_since_creation = (now - created_at).days
-    
-    # Dacă au trecut 7+ zile și nu s-a conectat niciodată
-    if created_at <= seven_days_ago and current_status != "deleted":
-        # Șterge utilizatorul
-        await self._delete_jellyfin_user(server_url, token, jellyfin_id)
-        
-        # Marchează ca șters cu motiv special
-        user_data["status"] = "deleted"
-        user_data["deletion_reason"] = "never_logged_in"
-        
-        # Trimite notificare specială
-        await self._send_cleanup_notification(
-            server_name, jellyfin_username, discord_user_id, 
-            "deleted_no_login", created_at
-        )
+# 4. Verifică configurația
+[p]server listservers
 ```
 
-### Comandă Reset
+## 🎯 Caracteristici Principale
 
-Comanda folosește:
-- `@server.command(name="resetusers")` - Subcomandă în grupul server
-- `@checks.is_owner()` - Restricție de permisiuni
-- `MessagePredicate` pentru validarea input-ului
-- `asyncio.TimeoutError` pentru timeout de 30 secunde
-- `discord.Embed` pentru afișare frumoasă
+✅ **Simplitate**: Doar două reguli - 7 zile și 90 zile
+✅ **Automat**: Nicio intervenție manuală necesară
+✅ **Transparent**: Notificări clare pentru toți
+✅ **Sigur**: Logging complet pentru audit
+✅ **Eficient**: Curățare automată a conturilor neutilizate
+✅ **Flexibil**: Utilizatorii pot crea conturi noi oricând
 
-## 🛡️ Măsuri de Siguranță
+## 🛡️ Siguranță și Privacy
 
-### Pentru Comanda Reset
-1. **Dubla confirmare**: Utilizatorul trebuie să scrie exact `CONFIRM DELETE ALL`
-2. **Timeout**: Doar 30 de secunde pentru confirmare
-3. **Permisiuni stricte**: Doar owner-ul botului
-4. **Avertizări clare**: Embed roșu cu toate detaliile
-5. **Logging**: Toate acțiunile sunt logate
+- ✅ Utilizatorii sunt notificați înainte de ștergere
+- ✅ Toate acțiunile sunt logate
+- ✅ Rolurile sunt eliminate automat la părăsirea serverului
+- ✅ Doar owner-ul botului poate reseta utilizatorii
+- ✅ Tracking-ul este separat de serverele Jellyfin
 
-### Pentru Ștergere Automată
-1. **Perioadă de grație**: 7 zile pentru utilizatori fără login
-2. **Verificare precisă**: Doar dacă nu există niciun istoric de activitate
-3. **Notificări**: Utilizatorii primesc DM înainte de ștergere
-4. **Logging detaliat**: Toate acțiunile sunt înregistrate
-5. **Nu afectează utilizatorii activi**: Doar cei fără login sunt verificați
+## 📝 Note Importante
 
-## 🔄 Flux Complet de Verificare și Acțiuni Utilizator
-
-```
-Verificare Zilnică
-    ↓
-Pentru fiecare utilizator:
-    ↓
-Are last_activity?
-    ├─ NU → Verifică created_at
-    │        ↓
-    │    created_at > 7 zile?
-    │        ├─ DA → 🚫 ȘTERGE (never_logged_in)
-    │        └─ NU → ✅ Păstrează
-    │
-    └─ DA → Calculează zile de inactivitate
-             ↓
-         > 60 zile?
-             ├─ DA → 🗑️ ȘTERGE (inactivitate)
-             └─ NU → Verifică > 30 zile?
-                      ├─ DA → 🟡 DEZACTIVEAZĂ
-                      │        ↓
-                      │   Trimite DM cu instrucțiuni
-                      │   User poate folosi: .activeaza
-                      │        ↓
-                      │   User execută .activeaza?
-                      │        ├─ DA → 🟢 REACTIVAT
-                      │        └─ NU → Rămâne dezactivat
-                      │
-                      └─ NU → ✅ Păstrează
-```
-
-## 📝 Note Finale
-
-### Comandă Reset
-- Serverele Jellyfin rămân neschimbate
-- Utilizatorii de pe Jellyfin rămân activi
-- Se șterge doar tracking-ul local din baza de date a botului
-- Ideal pentru debugging sau restart complet al sistemului de tracking
-
-### Ștergere Automată Utilizatori Fără Login
-- ✅ Utilizatorii sunt notificați prin DM
-- ✅ Adminii primesc notificări în canal
-- ✅ Conturile de pe Jellyfin sunt șterse efectiv
-- ✅ Tracking-ul local este actualizat
-- ⚠️ Utilizatorii pot crea un cont nou dacă au nevoie
-- ⚠️ Verificarea rulează automat la fiecare 24h
-
-## 🎯 Beneficii
-
-1. **Curățare automată**: Elimină conturile create dar neutilizate
-2. **Economie de resurse**: Nu ocupă spațiu pe server
-3. **Management simplificat**: Administratorii nu trebuie să șteargă manual
-4. **Transparență**: Toată lumea este informată
-5. **Flexibilitate**: Utilizatorii pot crea conturi noi când au nevoie
-6. **Self-service**: Utilizatorii pot reactiva propriile conturi fără ajutorul adminilor
-
-## 📖 Scenarii Complete de Utilizare
-
-### Scenariu 1: Utilizator Inactiv - Reactivare Reușită
-
-```
-Ziua 0: John creează cont "john123" pe server1
-Ziua 1-29: John vizionează filme regulat
-Ziua 30-59: John pleacă în vacanță, nu se conectează
-
-Ziua 60:
-  🟡 Botul dezactivează automat "john123"
-  📧 John primește DM:
-     "Contul tău a fost dezactivat. 
-      Folosește: .activeaza server1 john123"
-
-Ziua 61:
-  John: .activeaza server1 john123
-  Bot: ✅ Utilizator Reactivat cu Succes!
-  🟢 Contul "john123" este din nou activ
-
-Ziua 62+:
-  John continuă să folosească contul normal
-```
-
-### Scenariu 2: Utilizator cu Multiple Conturi
-
-```
-Mary creează:
-  - "mary_films" pe server1 (îl folosește)
-  - "mary_test" pe server1 (nu se conectează niciodată)
-
-Ziua 7:
-  🚫 "mary_test" șters automat (niciodată conectat)
-  📧 Mary primește notificare
-  ✅ "mary_films" rămâne activ
-
-Ziua 30+:
-  Mary nu mai folosește "mary_films"
-  
-Ziua 60:
-  🟡 "mary_films" dezactivat
-  
-Ziua 61:
-  Mary: .activeaza server1 mary_films
-  Bot: ✅ Reactivat!
-```
-
-### Scenariu 3: Utilizator Uită Complet de Cont
-
-```
-Bob creează "bob_movies"
-Nu se conectează niciodată
-
-Ziua 60:
-  🟡 Dezactivat automat
-  📧 Bob primește DM cu instrucțiuni
-  Bob ignoră mesajul
-
-Ziua 90:
-  🗑️ "bob_movies" șters definitiv
-  📧 Bob primește notificare de ștergere
-  
-Ziua 91:
-  Bob vrea să revină
-  Bob: .activeaza server1 bob_movies
-  Bot: ❌ Contul a fost șters, creează unul nou
-  
-  Bob: .creeaza server1 bob_new parola123
-  Bot: ✅ Cont nou creat!
-```
-
-## ⚡ Quick Start
-
-1. Instalează/actualizează plugin-ul
-2. Configurează serverele Jellyfin: `.server addserver`
-3. Activează comenzile: `.server enable`
-4. Setează canalul de notificări: `.server setchannel #canal`
-5. Verifică cleanup-ul: `.server checkcleanup` (testare)
-6. Plugin-ul va rula automat verificarea la fiecare 24h
+1. **Conturile Jellyfin** sunt șterse efectiv de pe server
+2. **Tracking-ul local** este actualizat în baza de date
+3. **Rolurile Discord** sunt eliminate automat când utilizatorul nu mai are conturi active pe acel server Jellyfin
+4. **Verificarea** rulează automat la fiecare 24 de ore
+5. **Notificările** sunt trimise în DM și în canalul configurat
+6. **Permisiuni necesare**: Botul trebuie să aibă permisiunea "Manage Roles" și rolul său trebuie să fie mai sus în ierarhie decât rolurile Jellyfin
 
 ## 🐛 Troubleshooting
 
-### Utilizatorii nu sunt șterși automat
+### Utilizatorii nu sunt șterși
 - Verifică că cleanup-ul este activat: `.server listservers`
-- Verifică logs pentru erori
-- Testează manual cu `.server checkcleanup`
+- Verifică logs pentru erori: verifică console-ul botului
+- Testează manual: `.server checkcleanup`
 
 ### Notificările nu ajung
-- Verifică canalul de notificări: `.server setchannel #canal`
+- Verifică canalul: `.server setchannel #canal`
 - Verifică permisiunile botului în canal
 - Verifică că utilizatorii au DM-urile deschise
 
-### Vreau să schimb perioada de 7 zile
-- Modifică în cod linia: `seven_days_ago = now - timedelta(days=7)`
-- Schimbă `days=7` cu valoarea dorită
-- Reîncarcă cog-ul
+### Rolurile nu sunt eliminate când ar trebui
+- Verifică logs: "Verificare roluri pentru user..."
+- Verifică că botul are permisiunea "Manage Roles"
+- Verifică că rolul botului este mai sus decât rolurile Jellyfin
+- Testează manual cu `.server checkcleanup`
+
+### Rolurile sunt eliminate când nu ar trebui
+- Verifică că utilizatorul mai are conturi active: `.utilizator @user`
+- Verifică logs pentru detalii despre ștergeri
+- Un utilizator trebuie să aibă cel puțin 1 cont ACTIV pentru a păstra rolul
+
+## 📈 Statistici și Monitoring
+
+Plugin-ul loghează:
+- ✅ Fiecare verificare zilnică
+- ✅ Fiecare utilizator verificat
+- ✅ Fiecare ștergere executată
+- ✅ Fiecare notificare trimisă
+- ✅ Fiecare membru care părăsește serverul
+
+## 🔄 Actualizare de la Versiuni Anterioare
+
+Dacă upgradeezi de la o versiune cu dezactivare:
+1. Utilizatorii cu status "disabled" vor rămâne în tracking
+2. Nu vor mai fi dezactivați noi utilizatori
+3. Utilizatorii "disabled" existenți pot fi șterși manual sau vor fi șterși când ating 90 de zile de la ultima activitate
+
+## 📞 Support
+
+Pentru probleme sau sugestii:
+- Verifică logs pentru detalii despre erori
+- Testează cu `.server checkcleanup`
+- Verifică configurația cu `.server listservers`
+
+## 🎉 Caracteristici Finale
+
+- **Simplu**: Două reguli clare, fără complexitate
+- **Automat**: Zero intervenție manuală
+- **Transparent**: Toată lumea știe ce se întâmplă
+- **Eficient**: Curățare automată, fără resurse irosite
+- **Flexibil**: Utilizatorii pot crea conturi noi oricând au nevoie
