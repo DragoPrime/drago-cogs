@@ -44,6 +44,18 @@ class JellyfinCog(commands.Cog):
         if self.cleanup_task:
             self.cleanup_task.cancel()
     
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        """Event care se declanșează când un membru părăsește serverul Discord"""
+        try:
+            log.info(f"=== MEMBRU PĂRĂSEȘTE SERVERUL ===")
+            log.info(f"Utilizator: {member} (ID: {member.id})")
+            log.info(f"Guild: {member.guild.name}")
+            log.info(f"Discord va elimina automat toate rolurile")
+            
+        except Exception as e:
+            log.error(f"Eroare în on_member_remove: {e}", exc_info=True)
+    
     async def _start_cleanup_task(self):
         """Pornește task-ul de cleanup zilnic"""
         await self.bot.wait_until_ready()
@@ -140,52 +152,6 @@ class JellyfinCog(commands.Cog):
             log.error(f"Eroare la obținerea ultimei activități pentru user {user_id}: {e}")
             return None
     
-    async def _disable_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
-        """Dezactivează un utilizator Jellyfin"""
-        user_url = f"{server_url}/Users/{user_id}"
-        policy_url = f"{server_url}/Users/{user_id}/Policy"
-    
-        headers = {
-            "X-MediaBrowser-Token": token,
-            "Content-Type": "application/json"
-        }
-    
-        try:
-            async with aiohttp.ClientSession() as session:
-                # Obține informații despre utilizator
-                log.info(f"Obținere informații user de la {user_url}")
-                async with session.get(user_url, headers=headers, timeout=10) as resp:
-                    log.info(f"Status GET user: {resp.status}")
-                    if resp.status == 200:
-                        user_data = await resp.json()
-                    
-                        # Obține politica din datele utilizatorului
-                        policy = user_data.get("Policy", {})
-                        log.info(f"Politică obținută, IsDisabled curent: {policy.get('IsDisabled', False)}")
-                    
-                        # Setează IsDisabled pe True
-                        policy["IsDisabled"] = True
-                    
-                        # Actualizează politica
-                        log.info(f"Trimit UPDATE cu IsDisabled=True la {policy_url}")
-                        async with session.post(policy_url, json=policy, headers=headers, timeout=10) as update_resp:
-                            log.info(f"Status POST policy: {update_resp.status}")
-                            if update_resp.status == 204 or update_resp.status == 200:
-                                log.info("✅ Utilizator dezactivat cu succes")
-                                return True
-                            else:
-                                error_text = await update_resp.text()
-                                log.error(f"POST a returnat {update_resp.status}: {error_text}")
-                                return False
-                    else:
-                        error_text = await resp.text()
-                        log.error(f"GET user a returnat {resp.status}: {error_text}")
-                        return False
-        except Exception as e:
-            log.error(f"Eroare la dezactivarea utilizatorului: {e}", exc_info=True)
-    
-        return False
-    
     async def _delete_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
         """Șterge un utilizator Jellyfin"""
         delete_url = f"{server_url}/Users/{user_id}"
@@ -209,51 +175,70 @@ class JellyfinCog(commands.Cog):
     
         return False
     
-    async def _enable_jellyfin_user(self, server_url: str, token: str, user_id: str) -> bool:
-        """Reactivează un utilizator Jellyfin dezactivat"""
-        user_url = f"{server_url}/Users/{user_id}"
-        policy_url = f"{server_url}/Users/{user_id}/Policy"
-    
-        headers = {
-            "X-MediaBrowser-Token": token,
-            "Content-Type": "application/json"
-        }
-    
+    async def _check_and_remove_role(self, discord_user_id: int, server_name: str):
+        """Verifică dacă utilizatorul mai are conturi active pe serverul Jellyfin și elimină rolul dacă nu"""
         try:
-            async with aiohttp.ClientSession() as session:
-                # Obține informații despre utilizator
-                log.info(f"Obținere informații user pentru reactivare de la {user_url}")
-                async with session.get(user_url, headers=headers, timeout=10) as resp:
-                    log.info(f"Status GET user: {resp.status}")
-                    if resp.status == 200:
-                        user_data = await resp.json()
+            users_data = await self.config.users()
+            user_id_str = str(discord_user_id)
+            
+            # Verifică dacă utilizatorul există în tracking
+            if user_id_str not in users_data:
+                return
+            
+            # Verifică dacă utilizatorul are conturi pe acest server
+            if server_name not in users_data[user_id_str]:
+                return
+            
+            # Verifică dacă mai are conturi ACTIVE (nu șterse) pe acest server
+            server_users = users_data[user_id_str][server_name]
+            active_users = [username for username, data in server_users.items() 
+                          if data.get("status", "active") != "deleted"]
+            
+            log.info(f"Verificare roluri pentru user {discord_user_id} pe {server_name}")
+            log.info(f"  Conturi active: {len(active_users)} din {len(server_users)}")
+            
+            # Dacă nu mai are niciun cont activ, elimină rolul din toate guild-urile
+            if len(active_users) == 0:
+                log.info(f"  ⚠️ Nu mai are conturi active, eliminare rol...")
+                
+                # Găsește toate guild-urile unde este configurat acest server
+                all_guilds = await self.config.all_guilds()
+                
+                for guild_id, guild_config in all_guilds.items():
+                    server_roles = guild_config.get("server_roles", {})
                     
-                        # Obține politica din datele utilizatorului
-                        policy = user_data.get("Policy", {})
-                        log.info(f"Politică obținută, IsDisabled curent: {policy.get('IsDisabled', False)}")
+                    if server_name not in server_roles:
+                        continue
                     
-                        # Setează IsDisabled pe False pentru reactivare
-                        policy["IsDisabled"] = False
+                    role_id = server_roles[server_name]
+                    guild = self.bot.get_guild(guild_id)
                     
-                        # Actualizează politica
-                        log.info(f"Trimit UPDATE cu IsDisabled=False la {policy_url}")
-                        async with session.post(policy_url, json=policy, headers=headers, timeout=10) as update_resp:
-                            log.info(f"Status POST policy: {update_resp.status}")
-                            if update_resp.status == 204 or update_resp.status == 200:
-                                log.info("✅ Utilizator reactivat cu succes")
-                                return True
-                            else:
-                                error_text = await update_resp.text()
-                                log.error(f"POST a returnat {update_resp.status}: {error_text}")
-                                return False
+                    if not guild:
+                        continue
+                    
+                    member = guild.get_member(discord_user_id)
+                    if not member:
+                        continue
+                    
+                    role = guild.get_role(role_id)
+                    if not role:
+                        continue
+                    
+                    if role in member.roles:
+                        try:
+                            await member.remove_roles(role, reason=f"Nu mai are conturi active pe {server_name}")
+                            log.info(f"  ✅ Rol {role.name} eliminat din {guild.name}")
+                        except discord.Forbidden:
+                            log.error(f"  ❌ Nu am permisiuni să elimin rolul {role.name}")
+                        except discord.HTTPException as e:
+                            log.error(f"  ❌ Eroare la eliminarea rolului: {e}")
                     else:
-                        error_text = await resp.text()
-                        log.error(f"GET user a returnat {resp.status}: {error_text}")
-                        return False
+                        log.info(f"  ℹ️ Utilizatorul nu avea rolul {role.name}")
+            else:
+                log.info(f"  ✅ Mai are {len(active_users)} conturi active, păstrează rolul")
+                
         except Exception as e:
-            log.error(f"Eroare la reactivarea utilizatorului: {e}", exc_info=True)
-    
-        return False
+            log.error(f"Eroare în _check_and_remove_role: {e}", exc_info=True)
     
     async def _check_inactive_users(self):
         """Verifică utilizatorii inactivi și îi gestionează"""
@@ -267,16 +252,13 @@ class JellyfinCog(commands.Cog):
         
         now = datetime.now()
         seven_days_ago = now - timedelta(days=7)
-        thirty_days_ago = now - timedelta(days=30)
-        sixty_days_ago = now - timedelta(days=60)
+        ninety_days_ago = now - timedelta(days=90)
         
         log.info(f"Data curentă: {now}")
         log.info(f"Limită 7 zile (utilizatori noi fără login): {seven_days_ago}")
-        log.info(f"Limită 30 zile: {thirty_days_ago}")
-        log.info(f"Limită 60 zile: {sixty_days_ago}")
+        log.info(f"Limită 90 zile (ștergere inactivitate): {ninety_days_ago}")
         
         total_checked = 0
-        total_disabled = 0
         total_deleted = 0
         
         for discord_user_id, user_servers in users.items():
@@ -358,6 +340,9 @@ class JellyfinCog(commands.Cog):
                                     await self._send_cleanup_notification(
                                         server_name, jellyfin_username, discord_user_id, "deleted_no_login", created_at
                                     )
+                                    
+                                    # Verifică și elimină rolul dacă nu mai are conturi active
+                                    await self._check_and_remove_role(discord_user_id, server_name)
                                 else:
                                     log.error(f"       ❌ Ștergerea a eșuat")
                                 continue  # Trecem la următorul utilizator
@@ -371,9 +356,9 @@ class JellyfinCog(commands.Cog):
                     days_inactive = (now - last_activity).days
                     log.info(f"       ⏰ Zile de inactivitate: {days_inactive}")
                     
-                    # Verifică dacă trebuie șters (60+ zile)
-                    if last_activity <= sixty_days_ago and current_status != "deleted":
-                        log.info(f"       🗑️ TREBUIE ȘTERS (>60 zile, status: {current_status})")
+                    # Verifică dacă trebuie șters (90+ zile)
+                    if last_activity <= ninety_days_ago and current_status != "deleted":
+                        log.info(f"       🗑️ TREBUIE ȘTERS (>90 zile, status: {current_status})")
                         
                         success = await self._delete_jellyfin_user(
                             server_config["url"], token, jellyfin_id
@@ -390,36 +375,16 @@ class JellyfinCog(commands.Cog):
                             await self._send_cleanup_notification(
                                 server_name, jellyfin_username, discord_user_id, "deleted", last_activity
                             )
+                            
+                            # Verifică și elimină rolul dacă nu mai are conturi active
+                            await self._check_and_remove_role(discord_user_id, server_name)
                         else:
                             log.error(f"       ❌ Ștergerea a eșuat")
-                    
-                    # Verifică dacă trebuie dezactivat (30+ zile)
-                    elif last_activity <= thirty_days_ago and current_status == "active":
-                        log.info(f"       ⚠️ TREBUIE DEZACTIVAT (>30 zile, status: active)")
-                        
-                        success = await self._disable_jellyfin_user(
-                            server_config["url"], token, jellyfin_id
-                        )
-                        
-                        if success:
-                            log.info(f"       ✅ Utilizator dezactivat cu succes")
-                            # Actualizează statusul
-                            user_data["status"] = "disabled"
-                            await self.config.users.set(users)
-                            total_disabled += 1
-                            
-                            # Trimite notificare
-                            await self._send_cleanup_notification(
-                                server_name, jellyfin_username, discord_user_id, "disabled", last_activity
-                            )
-                        else:
-                            log.error(f"       ❌ Dezactivarea a eșuat")
                     else:
                         log.info(f"       ✅ Nu necesită acțiuni (zile: {days_inactive}, status: {current_status})")
         
         log.info(f"\n=== VERIFICARE COMPLETATĂ ===")
         log.info(f"Total verificați: {total_checked}")
-        log.info(f"Total dezactivați: {total_disabled}")
         log.info(f"Total șterși: {total_deleted}")
     
     async def _send_cleanup_notification(self, server_name: str, jellyfin_username: str, discord_user_id: int, action: str, last_activity: datetime):
@@ -428,11 +393,7 @@ class JellyfinCog(commands.Cog):
         log.info(f"Server: {server_name}, User: {jellyfin_username}, Action: {action}")
     
         # Determină textele și culorile în funcție de acțiune
-        if action == "disabled":
-            color = 0xffa500
-            action_text = "dezactivat"
-            icon = "⚠️"
-        elif action == "deleted_no_login":
+        if action == "deleted_no_login":
             color = 0xff6b6b
             action_text = "șters (niciodată conectat)"
             icon = "🚫"
@@ -462,29 +423,17 @@ class JellyfinCog(commands.Cog):
             if action == "deleted_no_login":
                 dm_embed.add_field(name="📅 Creat la", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
                 dm_embed.add_field(name="⏰ Zile de la creare", value=str(days_inactive), inline=True)
-            else:
-                dm_embed.add_field(name="⏰ Zile de inactivitate", value=str(days_inactive), inline=True)
-                dm_embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
-        
-            if action == "disabled":
-                dm_embed.add_field(
-                    name="⚠️ Atenție",
-                    value=f"Contul tău a fost dezactivat din cauza inactivității. Va fi **șters permanent** în 30 de zile dacă nu este folosit.\n\n"
-                          f"**Cum îl reactivezi:**\n"
-                          f"Folosește comanda: `.activeaza {server_name} {jellyfin_username}` pe un canal de pe server\n"
-                          f"sau loghează-te și vizionează ceva pentru reactivare automată!",
-                    inline=False
-                )
-            elif action == "deleted_no_login":
                 dm_embed.add_field(
                     name="🚫 Cont șters - Niciodată folosit",
                     value=f"Contul tău a fost șters deoarece nu te-ai conectat la el în **7 zile** de la creare.\n\nDacă ai nevoie de un nou cont, te rog contactează administratorii.",
                     inline=False
                 )
-            else:  # deleted
+            else:
+                dm_embed.add_field(name="⏰ Zile de inactivitate", value=str(days_inactive), inline=True)
+                dm_embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
                 dm_embed.add_field(
                     name="🗑️ Cont șters",
-                    value="Contul tău a fost șters definitiv din cauza inactivității prelungite (60+ zile). Dacă dorești un nou cont, contactează administratorii.",
+                    value="Contul tău a fost șters definitiv din cauza inactivității prelungite (90+ zile). Dacă dorești un nou cont, contactează administratorii.",
                     inline=False
                 )
         
@@ -564,9 +513,6 @@ class JellyfinCog(commands.Cog):
             else:
                 channel_embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
                 channel_embed.add_field(name="⏰ Zile inactive", value=str(days_inactive), inline=True)
-                
-                if action == "disabled":
-                    channel_embed.add_field(name="ℹ️ Notă", value="Utilizatorul va fi șters în 30 de zile dacă rămâne inactiv", inline=False)
         
             channel_embed.set_footer(text="Cleanup automat Jellyfin")
         
@@ -906,7 +852,7 @@ class JellyfinCog(commands.Cog):
             value=f"• **{total_discord_users}** utilizatori Discord\n"
                   f"• **{total_users}** conturi Jellyfin\n"
                   f"• Tot istoricul de tracking\n"
-                  f"• Toate statusurile (activ/dezactivat/șters)",
+                  f"• Toate statusurile (activ/șters)",
             inline=False
         )
         
@@ -1037,7 +983,7 @@ class JellyfinCog(commands.Cog):
             else:
                 embed.add_field(name="Rol atribuit", value="❌ Nu (verifică configurația)", inline=True)
             
-            embed.add_field(name="ℹ️ Notă", value="Utilizatorul va fi dezactivat după 30 de zile de inactivitate și șters după 60 de zile", inline=False)
+            embed.add_field(name="ℹ️ Notă", value="Utilizatorul va fi șters după 90 de zile de inactivitate (sau după 7 zile dacă nu te conectezi niciodată)", inline=False)
             
             # Trimite mesajul în DM pentru securitate
             try:
@@ -1079,7 +1025,6 @@ class JellyfinCog(commands.Cog):
             
             total_users = 0
             active_users = 0
-            disabled_users = 0
             deleted_users = 0
             
             for server_name, server_users in users_data[user_id_str].items():
@@ -1092,9 +1037,6 @@ class JellyfinCog(commands.Cog):
                         if status == "active":
                             status_icon = "🟢"
                             active_users += 1
-                        elif status == "disabled":
-                            status_icon = "🟡"
-                            disabled_users += 1
                         else:  # deleted
                             status_icon = "🔴"
                             deleted_users += 1
@@ -1111,7 +1053,6 @@ class JellyfinCog(commands.Cog):
             # Footer cu statistici
             footer_text = f"Total: {total_users} | "
             footer_text += f"🟢 Activi: {active_users} | "
-            footer_text += f"🟡 Dezactivați: {disabled_users} | "
             footer_text += f"🔴 Șterși: {deleted_users}"
             
             embed.set_footer(text=footer_text)
@@ -1143,9 +1084,6 @@ class JellyfinCog(commands.Cog):
             if status == "active":
                 color = 0x00ff00
                 status_text = "🟢 Activ"
-            elif status == "disabled":
-                color = 0xffa500
-                status_text = "🟡 Dezactivat"
             else:  # deleted
                 color = 0xff0000
                 status_text = "🔴 Șters"
@@ -1162,17 +1100,13 @@ class JellyfinCog(commands.Cog):
             embed.add_field(name="🌐 URL Server", value=server_url, inline=False)
             embed.add_field(name="📅 Creat la", value=created_at, inline=True)
             
-            # Calculează zilele de inactivitate (doar pentru utilizatori activi/dezactivați)
-            if status != "deleted":
+            # Calculează zilele de inactivitate (doar pentru utilizatori activi)
+            if status == "active":
                 created_date = datetime.fromisoformat(user_info["created_at"])
                 days_since_creation = (datetime.now() - created_date).days
                 
-                if status == "active":
-                    if days_since_creation >= 30:
-                        embed.add_field(name="⚠️ Atenție", value="Acest utilizator ar trebui să fie dezactivat pentru inactivitate", inline=False)
-                elif status == "disabled":
-                    if days_since_creation >= 60:
-                        embed.add_field(name="🗑️ Atenție", value="Acest utilizator ar trebui să fie șters pentru inactivitate", inline=False)
+                if days_since_creation >= 90:
+                    embed.add_field(name="⚠️ Atenție", value="Acest utilizator ar trebui să fie șters pentru inactivitate (>90 zile)", inline=False)
             
             # Caută și alți utilizatori de pe același server Discord
             user_id_str = str(user_info["discord_user_id"])
@@ -1181,12 +1115,9 @@ class JellyfinCog(commands.Cog):
                 total_accounts = 0
                 for srv_name, srv_users in users_data[user_id_str].items():
                     active_count = sum(1 for u in srv_users.values() if u.get("status", "active") == "active")
-                    disabled_count = sum(1 for u in srv_users.values() if u.get("status", "active") == "disabled")
                     deleted_count = sum(1 for u in srv_users.values() if u.get("status", "active") == "deleted")
                     
                     status_info = f"🟢{active_count}"
-                    if disabled_count > 0:
-                        status_info += f" 🟡{disabled_count}"
                     if deleted_count > 0:
                         status_info += f" 🔴{deleted_count}"
                     
@@ -1202,120 +1133,3 @@ class JellyfinCog(commands.Cog):
                     embed.set_footer(text=f"Total conturi pe toate serverele: {total_accounts}")
         
         await ctx.send(embed=embed)
-    
-    @commands.command(name="activeaza", aliases=["reactivare", "enable"])
-    async def reactivate_user(self, ctx, nume_server: str, nume_utilizator: str):
-        """
-        Reactivează un utilizator Jellyfin dezactivat
-        
-        Poți reactiva doar propriile tale conturi dezactivate.
-        
-        Usage: .activeaza <nume_server> <nume_utilizator_jellyfin>
-        Exemplu: .activeaza server1 john123
-        """
-        # Verifică dacă comenzile sunt activate pe server
-        if not await self.config.guild(ctx.guild).enabled():
-            await ctx.send("❌ Comenzile Jellyfin nu sunt activate pe acest server Discord.")
-            return
-        
-        users_data = await self.config.users()
-        servers_data = await self.config.servers()
-        
-        # Verifică dacă serverul există
-        if nume_server not in servers_data:
-            await ctx.send(f"❌ Serverul **{nume_server}** nu există. Servere disponibile: {', '.join(servers_data.keys())}")
-            return
-        
-        user_id_str = str(ctx.author.id)
-        
-        # Verifică dacă utilizatorul Discord are conturi
-        if user_id_str not in users_data:
-            await ctx.send(f"❌ Nu ai niciun utilizator Jellyfin creat. Folosește `.creeaza` pentru a crea unul.")
-            return
-        
-        # Verifică dacă utilizatorul are conturi pe serverul specificat
-        if nume_server not in users_data[user_id_str]:
-            await ctx.send(f"❌ Nu ai niciun utilizator pe serverul **{nume_server}**.")
-            return
-        
-        # Verifică dacă utilizatorul Jellyfin specificat există
-        if nume_utilizator not in users_data[user_id_str][nume_server]:
-            available_users = list(users_data[user_id_str][nume_server].keys())
-            await ctx.send(f"❌ Nu ai un utilizator cu numele **{nume_utilizator}** pe serverul **{nume_server}**.\n"
-                          f"Utilizatorii tăi pe acest server: {', '.join(available_users)}")
-            return
-        
-        user_info = users_data[user_id_str][nume_server][nume_utilizator]
-        current_status = user_info.get("status", "active")
-        jellyfin_id = user_info.get("jellyfin_id")
-        
-        # Verifică statusul utilizatorului
-        if current_status == "active":
-            await ctx.send(f"✅ Utilizatorul **{nume_utilizator}** este deja activ!")
-            return
-        
-        if current_status == "deleted":
-            await ctx.send(f"❌ Utilizatorul **{nume_utilizator}** a fost șters și nu poate fi reactivat.\n"
-                          f"Te rog creează un cont nou cu `.creeaza {nume_server} <nume_nou> <parola>`")
-            return
-        
-        if not jellyfin_id:
-            await ctx.send(f"❌ Nu s-a putut găsi ID-ul utilizatorului Jellyfin. Te rog contactează administratorii.")
-            return
-        
-        # Utilizatorul este "disabled", procedăm la reactivare
-        server_config = servers_data[nume_server]
-        
-        # Obține token-ul de autentificare
-        token = await self._get_jellyfin_auth_token(
-            server_config["url"], 
-            server_config["admin_user"], 
-            server_config["admin_password"]
-        )
-        
-        if not token:
-            await ctx.send("❌ Nu s-a putut autentifica pe serverul Jellyfin. Te rog contactează administratorii.")
-            return
-        
-        # Trimite mesaj de procesare
-        processing_msg = await ctx.send(f"🔄 Reactivez utilizatorul **{nume_utilizator}** pe serverul **{nume_server}**...")
-        
-        # Reactivează utilizatorul
-        success = await self._enable_jellyfin_user(
-            server_config["url"],
-            token,
-            jellyfin_id
-        )
-        
-        if success:
-            # Actualizează statusul în baza de date
-            users_data[user_id_str][nume_server][nume_utilizator]["status"] = "active"
-            await self.config.users.set(users_data)
-            
-            # Creează embed de succes
-            embed = discord.Embed(
-                title="✅ Utilizator Reactivat cu Succes!",
-                color=0x00ff00,
-                description=f"Utilizatorul **{nume_utilizator}** a fost reactivat pe serverul **{nume_server}**"
-            )
-            
-            embed.add_field(name="🖥️ Server", value=nume_server, inline=True)
-            embed.add_field(name="👤 Utilizator", value=nume_utilizator, inline=True)
-            embed.add_field(name="📊 Status", value="🟢 Activ", inline=True)
-            embed.add_field(name="🌐 URL Server", value=server_config["url"], inline=False)
-            embed.add_field(
-                name="ℹ️ Notă",
-                value="Contul tău este acum activ! Poți să te conectezi și să vizionezi conținut.\n"
-                      "**Atenție:** Contul va fi din nou dezactivat după 30 de zile de inactivitate.",
-                inline=False
-            )
-            
-            embed.set_footer(text=f"Reactivat de {ctx.author}")
-            
-            await processing_msg.edit(content=None, embed=embed)
-            
-            log.info(f"Utilizator reactivat: {nume_utilizator} pe {nume_server} de către {ctx.author}")
-        else:
-            await processing_msg.edit(content=f"❌ Eroare la reactivarea utilizatorului. Te rog contactează administratorii.\n"
-                                             f"Verifică logs pentru mai multe detalii.")
-            log.error(f"Eșec la reactivarea utilizatorului {nume_utilizator} pe {nume_server}")
