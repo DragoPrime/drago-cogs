@@ -289,11 +289,9 @@ class JellyfinCog(commands.Cog):
                 for jellyfin_username, user_data in server_users.items():
                     total_checked += 1
                     jellyfin_id = user_data.get("jellyfin_id")
-                    current_status = user_data.get("status", "active")
                     
                     log.info(f"\n    👤 Utilizator Jellyfin: {jellyfin_username}")
                     log.info(f"       ID: {jellyfin_id}")
-                    log.info(f"       Status curent: {current_status}")
                     
                     if not jellyfin_id:
                         log.warning(f"       ⚠️ Nu există jellyfin_id, skip")
@@ -321,7 +319,7 @@ class JellyfinCog(commands.Cog):
                             log.info(f"       📊 Zile de la creare: {days_since_creation}")
                             
                             # Dacă utilizatorul a fost creat acum 7+ zile și nu s-a conectat niciodată
-                            if created_at <= seven_days_ago and current_status != "deleted":
+                            if created_at <= seven_days_ago:
                                 log.info(f"       🗑️ UTILIZATOR FĂRĂ LOGIN - Șters (>7 zile fără conectare)")
                                 
                                 success = await self._delete_jellyfin_user(
@@ -330,16 +328,26 @@ class JellyfinCog(commands.Cog):
                                 
                                 if success:
                                     log.info(f"       ✅ Utilizator șters cu succes (niciodată conectat)")
-                                    # Actualizează statusul
-                                    user_data["status"] = "deleted"
-                                    user_data["deletion_reason"] = "never_logged_in"
-                                    await self.config.users.set(users)
-                                    total_deleted += 1
                                     
                                     # Trimite notificare specială pentru utilizatori fără login
                                     await self._send_cleanup_notification(
                                         server_name, jellyfin_username, discord_user_id, "deleted_no_login", created_at
                                     )
+                                    
+                                    # Șterge complet din tracking
+                                    del users[str(discord_user_id)][server_name][jellyfin_username]
+                                    
+                                    # Dacă nu mai are utilizatori pe acest server, șterge server-ul
+                                    if not users[str(discord_user_id)][server_name]:
+                                        del users[str(discord_user_id)][server_name]
+                                    
+                                    # Dacă nu mai are niciun utilizator, șterge user-ul complet
+                                    if not users[str(discord_user_id)]:
+                                        del users[str(discord_user_id)]
+                                    
+                                    await self.config.users.set(users)
+                                    total_deleted += 1
+                                    log.info(f"       🗑️ Utilizator șters complet din tracking")
                                     
                                     # Verifică și elimină rolul dacă nu mai are conturi active
                                     await self._check_and_remove_role(discord_user_id, server_name)
@@ -357,8 +365,8 @@ class JellyfinCog(commands.Cog):
                     log.info(f"       ⏰ Zile de inactivitate: {days_inactive}")
                     
                     # Verifică dacă trebuie șters (90+ zile)
-                    if last_activity <= ninety_days_ago and current_status != "deleted":
-                        log.info(f"       🗑️ TREBUIE ȘTERS (>90 zile, status: {current_status})")
+                    if last_activity <= ninety_days_ago:
+                        log.info(f"       🗑️ TREBUIE ȘTERS (>90 zile)")
                         
                         success = await self._delete_jellyfin_user(
                             server_config["url"], token, jellyfin_id
@@ -366,15 +374,26 @@ class JellyfinCog(commands.Cog):
                         
                         if success:
                             log.info(f"       ✅ Utilizator șters cu succes")
-                            # Actualizează statusul
-                            user_data["status"] = "deleted"
-                            await self.config.users.set(users)
-                            total_deleted += 1
                             
                             # Trimite notificare
                             await self._send_cleanup_notification(
                                 server_name, jellyfin_username, discord_user_id, "deleted", last_activity
                             )
+                            
+                            # Șterge complet din tracking
+                            del users[str(discord_user_id)][server_name][jellyfin_username]
+                            
+                            # Dacă nu mai are utilizatori pe acest server, șterge server-ul
+                            if not users[str(discord_user_id)][server_name]:
+                                del users[str(discord_user_id)][server_name]
+                            
+                            # Dacă nu mai are niciun utilizator, șterge user-ul complet
+                            if not users[str(discord_user_id)]:
+                                del users[str(discord_user_id)]
+                            
+                            await self.config.users.set(users)
+                            total_deleted += 1
+                            log.info(f"       🗑️ Utilizator șters complet din tracking")
                             
                             # Verifică și elimină rolul dacă nu mai are conturi active
                             await self._check_and_remove_role(discord_user_id, server_name)
@@ -604,21 +623,23 @@ class JellyfinCog(commands.Cog):
         await self.config.users.set(users)
     
     async def _get_user_by_jellyfin_username(self, jellyfin_username: str) -> Optional[Dict[str, Any]]:
-        """Găsește utilizatorul Discord după username-ul Jellyfin"""
+        """Găsește utilizatorul Discord după username-ul Jellyfin (doar utilizatori activi)"""
         users = await self.config.users()
         
         for discord_user_id, user_data in users.items():
             for server_name, server_users in user_data.items():
                 if jellyfin_username in server_users:
                     user_info = server_users[jellyfin_username]
-                    return {
-                        "discord_user_id": int(discord_user_id),
-                        "server_name": server_name,
-                        "jellyfin_username": jellyfin_username,
-                        "created_at": user_info["created_at"],
-                        "jellyfin_id": user_info.get("jellyfin_id"),
-                        "status": user_info.get("status", "active")
-                    }
+                    # Returnează doar dacă utilizatorul este activ
+                    if user_info.get("status", "active") == "active":
+                        return {
+                            "discord_user_id": int(discord_user_id),
+                            "server_name": server_name,
+                            "jellyfin_username": jellyfin_username,
+                            "created_at": user_info["created_at"],
+                            "jellyfin_id": user_info.get("jellyfin_id"),
+                            "status": "active"
+                        }
         return None
     
     async def _assign_role(self, guild: discord.Guild, member: discord.Member, server_name: str):
@@ -1020,42 +1041,40 @@ class JellyfinCog(commands.Cog):
             embed = discord.Embed(
                 title="👤 Utilizatori Jellyfin",
                 color=0x3498db,
-                description=f"Utilizatori creați de {utilizator.mention}"
+                description=f"Utilizatori activi creați de {utilizator.mention}"
             )
             
-            total_users = 0
-            active_users = 0
-            deleted_users = 0
+            total_active_users = 0
+            has_any_server = False
             
             for server_name, server_users in users_data[user_id_str].items():
                 if server_name in servers_data:
                     server_url = servers_data[server_name]["url"]
                     
-                    users_list = []
+                    # Filtrează doar utilizatorii activi
+                    active_users_list = []
                     for username, user_info in server_users.items():
                         status = user_info.get("status", "active")
                         if status == "active":
-                            status_icon = "🟢"
-                            active_users += 1
-                        else:  # deleted
-                            status_icon = "🔴"
-                            deleted_users += 1
-                        
-                        users_list.append(f"{status_icon} {username}")
-                        total_users += 1
+                            active_users_list.append(f"🟢 {username}")
+                            total_active_users += 1
                     
-                    embed.add_field(
-                        name=f"🖥️ {server_name}",
-                        value=f"**URL:** {server_url}\n**Utilizatori:**\n" + "\n".join(users_list),
-                        inline=False
-                    )
+                    # Adaugă field-ul doar dacă sunt utilizatori activi
+                    if active_users_list:
+                        has_any_server = True
+                        embed.add_field(
+                            name=f"🖥️ {server_name}",
+                            value=f"**URL:** {server_url}\n**Utilizatori activi:**\n" + "\n".join(active_users_list),
+                            inline=False
+                        )
+            
+            # Verifică dacă are vreun utilizator activ
+            if not has_any_server or total_active_users == 0:
+                await ctx.send(f"❌ {utilizator.mention} nu are utilizatori Jellyfin activi.")
+                return
             
             # Footer cu statistici
-            footer_text = f"Total: {total_users} | "
-            footer_text += f"🟢 Activi: {active_users} | "
-            footer_text += f"🔴 Șterși: {deleted_users}"
-            
-            embed.set_footer(text=footer_text)
+            embed.set_footer(text=f"Total utilizatori activi: {total_active_users}")
             
         else:
             # Caută după username-ul Jellyfin
@@ -1079,50 +1098,39 @@ class JellyfinCog(commands.Cog):
             server_url = servers_data.get(user_info["server_name"], {}).get("url", "URL necunoscut")
             created_at = datetime.fromisoformat(user_info["created_at"]).strftime("%d.%m.%Y %H:%M")
             
-            # Determină culoarea și statusul
-            status = user_info.get("status", "active")
-            if status == "active":
-                color = 0x00ff00
-                status_text = "🟢 Activ"
-            else:  # deleted
-                color = 0xff0000
-                status_text = "🔴 Șters"
-            
+            # Utilizatorul este mereu activ (funcția returnează doar activi)
             embed = discord.Embed(
                 title="🔍 Informații utilizator Jellyfin",
-                color=color,
+                color=0x00ff00,
                 description=f"Detalii pentru utilizatorul **{utilizator}**"
             )
             
             embed.add_field(name="👤 Utilizator Discord", value=discord_user_name, inline=True)
-            embed.add_field(name="📊 Status", value=status_text, inline=True)
+            embed.add_field(name="📊 Status", value="🟢 Activ", inline=True)
             embed.add_field(name="🖥️ Server", value=user_info["server_name"], inline=True)
             embed.add_field(name="🌐 URL Server", value=server_url, inline=False)
             embed.add_field(name="📅 Creat la", value=created_at, inline=True)
             
-            # Calculează zilele de inactivitate (doar pentru utilizatori activi)
-            if status == "active":
-                created_date = datetime.fromisoformat(user_info["created_at"])
-                days_since_creation = (datetime.now() - created_date).days
-                
-                if days_since_creation >= 90:
-                    embed.add_field(name="⚠️ Atenție", value="Acest utilizator ar trebui să fie șters pentru inactivitate (>90 zile)", inline=False)
+            # Calculează zilele de inactivitate
+            created_date = datetime.fromisoformat(user_info["created_at"])
+            days_since_creation = (datetime.now() - created_date).days
             
-            # Caută și alți utilizatori de pe același server Discord
+            if days_since_creation >= 90:
+                embed.add_field(name="⚠️ Atenție", value="Acest utilizator ar trebui să fie șters pentru inactivitate (>90 zile)", inline=False)
+            
+            # Caută și alți utilizatori activi de pe același server Discord
             user_id_str = str(user_info["discord_user_id"])
             if user_id_str in users_data:
                 all_servers = []
-                total_accounts = 0
+                total_active_accounts = 0
                 for srv_name, srv_users in users_data[user_id_str].items():
+                    # Numără doar utilizatorii activi
                     active_count = sum(1 for u in srv_users.values() if u.get("status", "active") == "active")
-                    deleted_count = sum(1 for u in srv_users.values() if u.get("status", "active") == "deleted")
                     
-                    status_info = f"🟢{active_count}"
-                    if deleted_count > 0:
-                        status_info += f" 🔴{deleted_count}"
-                    
-                    all_servers.append(f"• {srv_name} ({status_info})")
-                    total_accounts += len(srv_users)
+                    # Adaugă serverul doar dacă are utilizatori activi
+                    if active_count > 0:
+                        all_servers.append(f"• {srv_name} (🟢{active_count})")
+                        total_active_accounts += active_count
                 
                 if len(all_servers) > 1:
                     embed.add_field(
@@ -1130,6 +1138,6 @@ class JellyfinCog(commands.Cog):
                         value="\n".join(all_servers),
                         inline=False
                     )
-                    embed.set_footer(text=f"Total conturi pe toate serverele: {total_accounts}")
+                    embed.set_footer(text=f"Total conturi active: {total_active_accounts}")
         
         await ctx.send(embed=embed)
