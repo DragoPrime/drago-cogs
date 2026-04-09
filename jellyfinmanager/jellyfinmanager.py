@@ -444,7 +444,7 @@ class JellyfinCog(commands.Cog):
                 dm_embed.add_field(name="⏰ Zile de la creare", value=str(days_inactive), inline=True)
                 dm_embed.add_field(
                     name="🚫 Cont șters - Niciodată folosit",
-                    value=f"Contul tău a fost șters deoarece nu te-ai conectat la el în **7 zile** de la creare.\n\nDacă ai nevoie de un nou cont, te rog contactează administratorii.",
+                    value=f"Contul tău a fost șters deoarece nu te-ai conectat la el în **7 zile** de la creare.\n\nDacă ai nevoie de un nou cont, creează altul prin ticket.",
                     inline=False
                 )
             else:
@@ -452,7 +452,7 @@ class JellyfinCog(commands.Cog):
                 dm_embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
                 dm_embed.add_field(
                     name="🗑️ Cont șters",
-                    value="Contul tău a fost șters definitiv din cauza inactivității prelungite (90+ zile). Dacă dorești un nou cont, contactează administratorii.",
+                    value="Contul tău a fost șters definitiv din cauza inactivității prelungite (90+ zile). Dacă dorești un nou cont, creează altul prin ticket.",
                     inline=False
                 )
         
