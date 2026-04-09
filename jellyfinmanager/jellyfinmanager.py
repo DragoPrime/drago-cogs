@@ -46,12 +46,74 @@ class JellyfinCog(commands.Cog):
     
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
-        """Event care se declanșează când un membru părăsește serverul Discord"""
+        """Event care se declanșează când un membru părăsește serverul Discord - șterge toate conturile Jellyfin"""
         try:
-            log.info(f"=== MEMBRU PĂRĂSEȘTE SERVERUL ===")
+            users_data = await self.config.users()
+            user_id_str = str(member.id)
+            
+            # Verifică dacă utilizatorul are conturi Jellyfin
+            if user_id_str not in users_data:
+                log.info(f"Membru {member} a părăsit serverul dar nu avea conturi Jellyfin")
+                return
+            
+            log.info(f"=== MEMBRU PĂRĂSEȘTE SERVERUL - ȘTERGERE CONTURI ===")
             log.info(f"Utilizator: {member} (ID: {member.id})")
             log.info(f"Guild: {member.guild.name}")
-            log.info(f"Discord va elimina automat toate rolurile")
+            
+            servers_config = await self.config.servers()
+            total_deleted = 0
+            
+            # Parcurge toate serverele Jellyfin ale utilizatorului
+            for server_name, server_users in list(users_data[user_id_str].items()):
+                if server_name not in servers_config:
+                    log.warning(f"  Server {server_name} nu mai există în config, skip")
+                    continue
+                
+                server_config = servers_config[server_name]
+                log.info(f"\n  📡 Conectare la server: {server_name}")
+                
+                # Obține token de autentificare
+                token = await self._get_jellyfin_auth_token(
+                    server_config["url"],
+                    server_config["admin_user"],
+                    server_config["admin_password"]
+                )
+                
+                if not token:
+                    log.error(f"  ❌ Nu s-a putut obține token pentru {server_name}")
+                    continue
+                
+                # Șterge fiecare utilizator Jellyfin
+                for jellyfin_username, user_info in list(server_users.items()):
+                    jellyfin_id = user_info.get("jellyfin_id")
+                    
+                    if not jellyfin_id:
+                        log.warning(f"    ⚠️ {jellyfin_username} - nu are jellyfin_id")
+                        continue
+                    
+                    log.info(f"    🗑️ Ștergere: {jellyfin_username}")
+                    
+                    # Șterge de pe serverul Jellyfin
+                    success = await self._delete_jellyfin_user(
+                        server_config["url"],
+                        token,
+                        jellyfin_id
+                    )
+                    
+                    if success:
+                        log.info(f"    ✅ {jellyfin_username} șters de pe Jellyfin")
+                        total_deleted += 1
+                    else:
+                        log.error(f"    ❌ Eșec la ștergerea lui {jellyfin_username}")
+            
+            # Șterge complet utilizatorul din tracking
+            if user_id_str in users_data:
+                del users_data[user_id_str]
+                await self.config.users.set(users_data)
+                log.info(f"\n  🗑️ Tracking șters complet pentru {member}")
+            
+            log.info(f"\n✅ Procesare completă: {total_deleted} conturi Jellyfin șterse")
+            log.info(f"=== FINAL ===\n")
             
         except Exception as e:
             log.error(f"Eroare în on_member_remove: {e}", exc_info=True)
@@ -444,7 +506,7 @@ class JellyfinCog(commands.Cog):
                 dm_embed.add_field(name="⏰ Zile de la creare", value=str(days_inactive), inline=True)
                 dm_embed.add_field(
                     name="🚫 Cont șters - Niciodată folosit",
-                    value=f"Contul tău a fost șters deoarece nu te-ai conectat la el în **7 zile** de la creare.\n\nDacă ai nevoie de un nou cont, creează altul prin ticket.",
+                    value=f"Contul tău a fost șters deoarece nu te-ai conectat la el în **7 zile** de la creare.\n\nDacă ai nevoie de un nou cont, te rog contactează administratorii.",
                     inline=False
                 )
             else:
@@ -452,7 +514,7 @@ class JellyfinCog(commands.Cog):
                 dm_embed.add_field(name="📅 Ultima activitate", value=last_activity.strftime("%d.%m.%Y %H:%M"), inline=False)
                 dm_embed.add_field(
                     name="🗑️ Cont șters",
-                    value="Contul tău a fost șters definitiv din cauza inactivității prelungite (90+ zile). Dacă dorești un nou cont, creează altul prin ticket.",
+                    value="Contul tău a fost șters definitiv din cauza inactivității prelungite (90+ zile). Dacă dorești un nou cont, contactează administratorii.",
                     inline=False
                 )
         
