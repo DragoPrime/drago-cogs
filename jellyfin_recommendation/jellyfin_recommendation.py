@@ -260,6 +260,8 @@ class JellyfinRecommendation(commands.Cog):
             web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
             server_name = settings.get('server_name', 'Freia [SERVER 2]')
             embed.add_field(name="Vizionare Online:", value=f"[{server_name}]({web_url})", inline=False)
+
+        embed.add_field(name="*Notă:*", value=f"*Descriere tradusă automat din engleză folosind deep_translate.*", inline=False)
         
         cmd_text = f"`.recomanda {media_type}`"
         embed.add_field(name="Caută mai multe recomandări:", value=f"Folosește comanda {cmd_text} pentru a primi o recomandare personalizată oricând dorești!", inline=False)
@@ -536,6 +538,8 @@ class JellyfinRecommendation(commands.Cog):
                 web_url = f"{settings['base_url']}/web/index.html#!/details?id={item_id}"
                 server_name = settings.get('server_name', 'Freia [SERVER 2]')
                 embed.add_field(name="Vizionare Online:", value=f"[{server_name}]({web_url})", inline=False)
+
+            embed.add_field(name="*Notă:*", value=f"*Descriere tradusă automat din engleză folosind deep_translate.*", inline=False)
                 
             cmd_text = f"`.recomanda {media_type}`"
             embed.add_field(name="Caută mai multe recomandări:", value=f"Folosește comanda {cmd_text} pentru a primi o recomandare personalizată oricând dorești!", inline=False)
