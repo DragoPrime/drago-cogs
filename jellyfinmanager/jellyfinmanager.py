@@ -462,7 +462,7 @@ class JellyfinCog(commands.Cog):
                         else:
                             log.error(f"       ❌ Ștergerea a eșuat")
                     else:
-                        log.info(f"       ✅ Nu necesită acțiuni (zile: {days_inactive}, status: {current_status})")
+                        log.info(f"       ✅ Nu necesită acțiuni (zile inactive: {days_inactive})")
         
         log.info(f"\n=== VERIFICARE COMPLETATĂ ===")
         log.info(f"Total verificați: {total_checked}")
