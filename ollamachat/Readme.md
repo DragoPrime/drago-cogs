@@ -19,8 +19,13 @@ Istoricul scurt de conversație folosit ca și context se ține doar în memorie
    ```bash
    ollama pull llama3
    ```
-   (Recomandare: pentru română, modele precum `llama3`, `gemma2` sau `mistral` merg relativ bine;
+   (Recomandare: pentru română, modele precum `llama3`, `gemma2`, `mistral` sau `qwen3` merg relativ bine;
    calitatea în limba română variază de la model la model — testează câteva.)
+
+   **Notă pentru modele cu "thinking mode" (ex: `qwen3`, `deepseek-r1`):** cog-ul dezactivează
+   automat acest mod (`think: false`) pentru răspunsuri rapide și curate, potrivite pentru chat live.
+   Îl poți reactiva oricând cu `[p]ollamaset gandire`, dacă preferi răspunsuri mai atent raționate
+   (dar mai lente).
 3. Red Discord Bot 3.5+ deja instalat și funcțional.
 
 ## Instalare
@@ -72,6 +77,7 @@ Testează fără să aștepți un membru nou / un mesaj norocos:
 | `sansa <1-100>` | Șansa (%) ca botul să răspundă la un mesaj din canalul de chat |
 | `cooldown <secunde>` | Timp minim între două răspunsuri automate |
 | `istoric <1-20>` | Câte mesaje anterioare ține minte AI-ul drept context |
+| `gandire` | Activează/dezactivează modul "thinking" pentru modele care îl suportă (ex: qwen3). Implicit dezactivat, pentru răspunsuri rapide. |
 | `toggle` | Activează/dezactivează chat-ul ocazional |
 | `togglebunvenit` | Activează/dezactivează mesajele de bun venit |
 | `testbunvenit` | Generează un mesaj de bun venit de test |
