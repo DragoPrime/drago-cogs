@@ -141,8 +141,17 @@ class OllamaChat(commands.Cog):
         if not reply:
             return
 
+        # Inlocuim numele afisat, folosit de AI in text, cu ping-ul real (@utilizator).
+        # Daca AI-ul nu a folosit numele deloc, adaugam ping-ul la inceputul mesajului.
+        if member.display_name in reply:
+            reply = reply.replace(member.display_name, member.mention)
+        elif member.name in reply:
+            reply = reply.replace(member.name, member.mention)
+        else:
+            reply = f"{member.mention} {reply}"
+
         try:
-            await channel.send(f"{member.mention} {reply}")
+            await channel.send(reply)
         except discord.Forbidden:
             pass
 
@@ -325,6 +334,15 @@ class OllamaChat(commands.Cog):
             except RuntimeError as e:
                 await ctx.send(f"Eroare la comunicarea cu Ollama: {e}")
                 return
+
+        if reply:
+            if ctx.author.display_name in reply:
+                reply = reply.replace(ctx.author.display_name, ctx.author.mention)
+            elif ctx.author.name in reply:
+                reply = reply.replace(ctx.author.name, ctx.author.mention)
+            else:
+                reply = f"{ctx.author.mention} {reply}"
+
         await ctx.send(reply or "(AI-ul a returnat un raspuns gol)")
 
     @ollamaset.command(name="testchat")
