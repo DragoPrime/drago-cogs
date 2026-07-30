@@ -51,6 +51,7 @@ class OllamaChat(commands.Cog):
             "chat_cooldown": 20,  # secunde minime intre doua raspunsuri automate
             "history_length": 8,  # cate mesaje anterioare tine minte per canal, pentru context
             "timeout": 60,  # secunde, timeout pentru cererile catre Ollama
+            "thinking_mode": False,  # pentru modele cu "thinking" (ex: qwen3, deepseek-r1) - dezactivat implicit
         }
         self.config.register_guild(**default_guild)
 
@@ -81,6 +82,10 @@ class OllamaChat(commands.Cog):
             "model": conf["model"],
             "messages": messages,
             "stream": False,
+            # Pentru modele care suporta "thinking mode" (ex: qwen3, deepseek-r1),
+            # dezactivam acest mod implicit pentru raspunsuri rapide si curate in chat.
+            # Ollama ignora acest parametru la modelele care nu-l suporta.
+            "think": conf["thinking_mode"],
         }
         timeout = aiohttp.ClientTimeout(total=conf["timeout"])
         try:
@@ -277,6 +282,18 @@ class OllamaChat(commands.Cog):
         await self.config.guild(ctx.guild).history_length.set(numar_mesaje)
         await ctx.send(f"Lungimea istoricului de context a fost setata la {numar_mesaje} mesaje.")
 
+    @ollamaset.command(name="gandire", aliases=["thinking"])
+    async def ollamaset_thinking(self, ctx: commands.Context):
+        """Activeaza/dezactiveaza modul de 'gandire' (thinking) pentru modelele care il suporta (ex: qwen3).
+
+        Implicit este dezactivat, pentru raspunsuri rapide, potrivite pentru chat live.
+        Activarea lui poate imbunatati calitatea raspunsurilor complexe, dar le face mai lente.
+        """
+        current = await self.config.guild(ctx.guild).thinking_mode()
+        await self.config.guild(ctx.guild).thinking_mode.set(not current)
+        stare = "activat" if not current else "dezactivat"
+        await ctx.send(f"Modul de gandire (thinking) a fost {stare}.")
+
     @ollamaset.command(name="toggle")
     async def ollamaset_toggle(self, ctx: commands.Context):
         """Activeaza/dezactiveaza functia de chat ocazional."""
@@ -352,5 +369,6 @@ class OllamaChat(commands.Cog):
         embed.add_field(name="Sansa raspuns", value=f"{conf['chat_chance']}%", inline=True)
         embed.add_field(name="Cooldown", value=f"{conf['chat_cooldown']}s", inline=True)
         embed.add_field(name="Lungime istoric", value=str(conf["history_length"]), inline=True)
+        embed.add_field(name="Mod gandire (thinking)", value=str(conf["thinking_mode"]), inline=True)
         embed.add_field(name="Personalitate", value=conf["personality"][:1024], inline=False)
         await ctx.send(embed=embed)
