@@ -1,0 +1,12 @@
+{
+    "author": ["Claude (Anthropic)"],
+    "min_bot_version": "3.5.0",
+    "max_bot_version": "0.0.0",
+    "min_python_version": [3, 9, 0],
+    "description": "Cog care conecteaza botul la un model AI local rulat prin Ollama. Intampina membrii noi cu mesaje generate de AI si poate purta conversatii ocazionale intr-un canal ales, totul in limba romana, cu personalitate configurabila.",
+    "hidden": false,
+    "install_msg": "Multumesc ca ai instalat OllamaChat! Foloseste `[p]ollamaset` pentru a configura cog-ul (URL Ollama, model, personalitate, canal de bun venit, canal de chat).",
+    "short": "Chat AI local (Ollama) cu mesaje de bun venit si conversatii ocazionale, in romana.",
+    "end_user_data_statement": "Acest cog nu stocheaza date personale permanente. Retine temporar, doar in memorie (RAM), ultimele cateva mesaje dintr-un canal pentru a oferi context conversatiei AI. Aceste date se pierd la restart si nu sunt salvate pe disc.",
+    "tags": ["ai", "ollama", "chat", "welcome", "llm"]
+}
