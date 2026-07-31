@@ -52,6 +52,9 @@ class OllamaChat(commands.Cog):
             "history_length": 8,  # cate mesaje anterioare tine minte per canal, pentru context
             "timeout": 60,  # secunde, timeout pentru cererile catre Ollama
             "thinking_mode": False,  # pentru modele cu "thinking" (ex: qwen3, deepseek-r1) - dezactivat implicit
+            "jellyfin_enabled": True,
+            "jellyfin_servers": [],  # lista de dict: {name, url, api_key, description, restricted}
+            "jellyfin_search_limit": 6,  # cate rezultate per server sunt incluse in context
         }
         self.config.register_guild(**default_guild)
 
@@ -108,6 +111,87 @@ class OllamaChat(commands.Cog):
     async def _build_system_prompt(self, guild: discord.Guild, extra_instruction: str) -> str:
         personality = await self.config.guild(guild).personality()
         return f"{personality}\n\n{extra_instruction}"
+
+    # ------------------------------------------------------------------ #
+    #  Integrare Jellyfin
+    # ------------------------------------------------------------------ #
+
+    async def _jellyfin_search_one(self, server: dict, query: str, limit: int) -> list:
+        """Cauta un termen pe un singur server Jellyfin si returneaza o lista de descrieri scurte."""
+        url = server["url"].rstrip("/")
+        params = {
+            "searchTerm": query,
+            "api_key": server["api_key"],
+            "Limit": str(limit),
+            "IncludeArtists": "false",
+            "IncludeGenres": "false",
+            "IncludeStudios": "false",
+        }
+        try:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with self.session.get(f"{url}/Search/Hints", params=params, timeout=timeout) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+        except (asyncio.TimeoutError, aiohttp.ClientError):
+            return []
+
+        results = []
+        for hint in data.get("SearchHints", []):
+            name = hint.get("Name")
+            if not name:
+                continue
+            year = hint.get("ProductionYear")
+            item_type = hint.get("Type", "")
+            piece = name
+            if year:
+                piece += f" ({year})"
+            if item_type:
+                piece += f" [{item_type}]"
+            results.append(piece)
+        return results
+
+    async def _jellyfin_context(self, guild: discord.Guild, query: str, channel: discord.abc.GuildChannel) -> str:
+        """Cauta pe toate serverele Jellyfin configurate si construieste un bloc de context text.
+
+        Serverele marcate ca 'restricted' (continut adult) sunt incluse doar daca
+        se cauta dintr-un canal marcat NSFW pe Discord.
+        """
+        conf = await self.config.guild(guild).all()
+        if not conf["jellyfin_enabled"]:
+            return ""
+        servers = conf["jellyfin_servers"]
+        if not servers:
+            return ""
+
+        is_nsfw = bool(getattr(channel, "is_nsfw", lambda: False)())
+        limit = conf["jellyfin_search_limit"]
+
+        blocks = []
+        for server in servers:
+            if server.get("restricted") and not is_nsfw:
+                continue
+            items = await self._jellyfin_search_one(server, query, limit)
+            if items:
+                lines = "\n".join(f"  - {item}" for item in items)
+                blocks.append(
+                    f"Server '{server['name']}' ({server.get('description', 'fara descriere')}), "
+                    f"adresa: {server['url']}:\n{lines}"
+                )
+
+        if not blocks:
+            return ""
+
+        return (
+            "Informatii disponibile despre continutul de pe serverele Jellyfin ale utilizatorului "
+            "(foloseste-le DOAR daca sunt relevante pentru mesaj; nu inventa titluri care nu apar "
+            "in aceasta lista si nu pretinde ca stii alte titluri decat cele de mai jos; daca "
+            "mentionezi un titlu gasit, poti include si adresa serverului unde se afla. Daca gasesti "
+            "mai multe variante ale aceluiasi titlu (ex: sezoane, filme, OVA-uri separate), "
+            "enumera-le pe scurt pe toate, cu anul sau tipul, ca utilizatorul sa stie ce optiuni are; "
+            "nu alege tu unul singur in locul lui):\n\n"
+            + "\n\n".join(blocks)
+        )
 
     # ------------------------------------------------------------------ #
     #  Mesaje de bun venit
@@ -197,6 +281,11 @@ class OllamaChat(commands.Cog):
 
         async with lock:
             system_prompt = f"{conf['personality']}\n\n{conf['chat_instruction']}"
+
+            jellyfin_context = await self._jellyfin_context(message.guild, message.content, message.channel)
+            if jellyfin_context:
+                system_prompt += f"\n\n{jellyfin_context}"
+
             recent = list(history)[-conf["history_length"]:]
             messages = [{"role": "system", "content": system_prompt}] + recent
 
@@ -350,6 +439,11 @@ class OllamaChat(commands.Cog):
         """Testeaza direct un raspuns AI, pornind de la un mesaj dat de tine."""
         conf = await self.config.guild(ctx.guild).all()
         system_prompt = f"{conf['personality']}\n\n{conf['chat_instruction']}"
+
+        jellyfin_context = await self._jellyfin_context(ctx.guild, mesaj, ctx.channel)
+        if jellyfin_context:
+            system_prompt += f"\n\n{jellyfin_context}"
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"{ctx.author.display_name}: {mesaj}"},
@@ -361,6 +455,121 @@ class OllamaChat(commands.Cog):
                 await ctx.send(f"Eroare la comunicarea cu Ollama: {e}")
                 return
         await ctx.send(reply or "(AI-ul a returnat un raspuns gol)")
+
+    @ollamaset.group(name="jellyfin")
+    async def ollamaset_jellyfin(self, ctx: commands.Context):
+        """Configureaza serverele Jellyfin despre care AI-ul poate raspunde."""
+
+    @ollamaset_jellyfin.command(name="add")
+    async def jellyfin_add(
+        self,
+        ctx: commands.Context,
+        nume: str,
+        url: str,
+        api_key: str,
+        continut_adult: bool,
+        *,
+        descriere: str = "",
+    ):
+        """Adauga un server Jellyfin.
+
+        Exemplu: `[p]ollamaset jellyfin add Anime https://jellyfin.exemplu.ro:8096 CHEIE_API false Serverul cu anime`
+
+        `continut_adult` este `true` sau `false` — daca e `true`, rezultatele de pe acest
+        server vor fi folosite de AI DOAR in canale marcate NSFW pe Discord.
+
+        Din motive de securitate (cheia API va fi vizibila in mesaj), botul va incerca sa
+        stearga mesajul tau imediat dupa ce salveaza configuratia.
+        """
+        servers = await self.config.guild(ctx.guild).jellyfin_servers()
+        if any(s["name"].lower() == nume.lower() for s in servers):
+            await ctx.send(f"Exista deja un server numit `{nume}`. Sterge-l intai cu `jellyfin remove {nume}`.")
+            return
+
+        servers.append(
+            {
+                "name": nume,
+                "url": url.rstrip("/"),
+                "api_key": api_key,
+                "description": descriere or "fara descriere",
+                "restricted": continut_adult,
+            }
+        )
+        await self.config.guild(ctx.guild).jellyfin_servers.set(servers)
+
+        try:
+            await ctx.message.delete()
+        except (discord.Forbidden, discord.NotFound):
+            pass
+
+        confirmare = f"Serverul Jellyfin `{nume}` a fost adaugat"
+        confirmare += " (marcat ca **continut adult** — folosit doar in canale NSFW)." if continut_adult else "."
+        await ctx.send(confirmare)
+
+    @ollamaset_jellyfin.command(name="remove")
+    async def jellyfin_remove(self, ctx: commands.Context, nume: str):
+        """Sterge un server Jellyfin dupa nume."""
+        servers = await self.config.guild(ctx.guild).jellyfin_servers()
+        filtered = [s for s in servers if s["name"].lower() != nume.lower()]
+        if len(filtered) == len(servers):
+            await ctx.send(f"Nu am gasit niciun server numit `{nume}`.")
+            return
+        await self.config.guild(ctx.guild).jellyfin_servers.set(filtered)
+        await ctx.send(f"Serverul `{nume}` a fost sters.")
+
+    @ollamaset_jellyfin.command(name="list")
+    async def jellyfin_list(self, ctx: commands.Context):
+        """Afiseaza serverele Jellyfin configurate (fara cheile API)."""
+        servers = await self.config.guild(ctx.guild).jellyfin_servers()
+        if not servers:
+            await ctx.send("Niciun server Jellyfin configurat inca. Foloseste `jellyfin add`.")
+            return
+        embed = discord.Embed(title="Servere Jellyfin configurate", color=discord.Color.blurple())
+        for s in servers:
+            tip = "Continut adult (doar canale NSFW)" if s.get("restricted") else "Continut general"
+            embed.add_field(
+                name=s["name"],
+                value=f"URL: `{s['url']}`\nTip: {tip}\nDescriere: {s.get('description', '—')}",
+                inline=False,
+            )
+        await ctx.send(embed=embed)
+
+    @ollamaset_jellyfin.command(name="test")
+    async def jellyfin_test(self, ctx: commands.Context, nume: str, *, cautare: str):
+        """Testeaza o cautare directa pe un server Jellyfin, dupa nume."""
+        servers = await self.config.guild(ctx.guild).jellyfin_servers()
+        server = next((s for s in servers if s["name"].lower() == nume.lower()), None)
+        if server is None:
+            await ctx.send(f"Nu am gasit niciun server numit `{nume}`.")
+            return
+        limit = await self.config.guild(ctx.guild).jellyfin_search_limit()
+        async with ctx.typing():
+            results = await self._jellyfin_search_one(server, cautare, limit)
+        if not results:
+            await ctx.send("Nu am gasit niciun rezultat (sau serverul nu a raspuns).")
+            return
+        await ctx.send("Rezultate:\n" + "\n".join(f"- {r}" for r in results))
+
+    @ollamaset_jellyfin.command(name="limita", aliases=["limit"])
+    async def jellyfin_limit(self, ctx: commands.Context, numar: int):
+        """Seteaza cate rezultate se cauta per server Jellyfin (implicit 6).
+
+        Mareste aceasta valoare daca ai titluri cu multe sezoane/filme separate
+        si vrei ca AI-ul sa le vada pe toate intr-o cautare.
+        """
+        if not 1 <= numar <= 20:
+            await ctx.send("Alege o valoare intre 1 si 20.")
+            return
+        await self.config.guild(ctx.guild).jellyfin_search_limit.set(numar)
+        await ctx.send(f"Limita de rezultate per server Jellyfin a fost setata la {numar}.")
+
+    @ollamaset_jellyfin.command(name="toggle")
+    async def jellyfin_toggle(self, ctx: commands.Context):
+        """Activeaza/dezactiveaza integrarea Jellyfin, global pentru acest server Discord."""
+        current = await self.config.guild(ctx.guild).jellyfin_enabled()
+        await self.config.guild(ctx.guild).jellyfin_enabled.set(not current)
+        stare = "activata" if not current else "dezactivata"
+        await ctx.send(f"Integrarea Jellyfin a fost {stare}.")
 
     @ollamaset.command(name="setari", aliases=["settings", "show"])
     async def ollamaset_settings(self, ctx: commands.Context):
@@ -388,5 +597,11 @@ class OllamaChat(commands.Cog):
         embed.add_field(name="Cooldown", value=f"{conf['chat_cooldown']}s", inline=True)
         embed.add_field(name="Lungime istoric", value=str(conf["history_length"]), inline=True)
         embed.add_field(name="Mod gandire (thinking)", value=str(conf["thinking_mode"]), inline=True)
+        jellyfin_servers = conf["jellyfin_servers"]
+        embed.add_field(
+            name="Jellyfin",
+            value=f"{'Activat' if conf['jellyfin_enabled'] else 'Dezactivat'} ({len(jellyfin_servers)} servere)",
+            inline=True,
+        )
         embed.add_field(name="Personalitate", value=conf["personality"][:1024], inline=False)
         await ctx.send(embed=embed)
