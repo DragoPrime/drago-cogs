@@ -65,6 +65,58 @@ Testează fără să aștepți un membru nou / un mesaj norocos:
 [p]ollamaset testchat Salut, ce mai faceți?
 ```
 
+## Integrare Jellyfin
+
+Botul poate căuta live pe serverele tale Jellyfin și include rezultatele relevante drept
+context pentru AI, ca să răspundă corect despre ce titluri există — fără să inventeze nimic.
+Când găsește un titlu, AI-ul poate include și adresa serverului Jellyfin respectiv în răspuns,
+ca utilizatorul să știe direct unde să-l acceseze.
+
+### Cum obții o cheie API Jellyfin
+
+În interfața web Jellyfin: **Dashboard → API Keys → +** (creează o cheie nouă, dă-i un nume).
+
+### Configurare
+
+```
+[p]ollamaset jellyfin add Anime https://jellyfin-anime.exemplu.ro:8096 CHEIE_API false Serverul cu anime si desene
+[p]ollamaset jellyfin add Adult https://jellyfin-adult.exemplu.ro:8096 CHEIE_API true Continut pentru adulti
+[p]ollamaset jellyfin list
+```
+
+Parametrii comenzii `add`: `<nume> <url> <cheie_api> <continut_adult:true/false> [descriere]`
+
+**Important:** botul șterge automat mesajul tău după ce salvează serverul (ca să nu rămână
+cheia API vizibilă în chat), dar asigură-te oricum că rulezi comanda într-un canal privat sau
+că ai permisiunile potrivite.
+
+**Protecție conținut adult:** orice server marcat cu `true` la `continut_adult` este folosit de
+AI **doar** atunci când cineva întreabă dintr-un canal Discord marcat ca **NSFW** (Server
+Settings → canal → Edit Channel → Age-Restricted Channel). În canale normale, acel server e
+complet ignorat de căutare — botul nu va menționa nici măcar că există.
+
+**Notă de securitate:** botul include adresa (URL-ul) serverului Jellyfin în răspunsuri, ca
+utilizatorii să știe direct unde să acceseze un titlu. Asta înseamnă că oricine poate citi
+canalul respectiv va vedea acea adresă, chiar dacă nu are cont pe Jellyfin — asigură-te că
+serverele tale sunt oricum protejate prin autentificare/rețea (VPN, reverse proxy cu login,
+etc.) și nu te baza doar pe faptul că adresa nu e cunoscută public.
+
+### Alte comenzi Jellyfin
+
+| Comandă | Descriere |
+|---|---|
+| `jellyfin add <nume> <url> <cheie> <adult:true/false> [descriere]` | Adaugă un server |
+| `jellyfin remove <nume>` | Șterge un server |
+| `jellyfin list` | Listează serverele configurate (fără cheile API) |
+| `jellyfin test <nume> <cautare>` | Testează direct o căutare pe un server |
+| `jellyfin limita <numar>` | Câte rezultate se caută per server (implicit 6) |
+| `jellyfin toggle` | Activează/dezactivează toată integrarea Jellyfin |
+
+**Titluri cu mai multe variante (sezoane, filme separate):** căutarea Jellyfin întoarce toate
+potrivirile găsite (până la limita setată), cu an și tip (Serie/Film). AI-ul este instruit să
+le enumere pe toate, nu să aleagă el una singură — dacă ai serii cu multe sezoane sau filme
+separate, poate fi util să mărești limita cu `jellyfin limita`.
+
 ## Toate comenzile (`[p]ollamaset ...`)
 
 | Comandă | Descriere |
