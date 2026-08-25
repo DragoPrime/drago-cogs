@@ -9,11 +9,6 @@ from redbot.core import commands, Config, checks
 from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import box, humanize_list
 
-MESAJ_AVERTISMENT_IMPLICIT = (
-    "⚠️ **Nu trimite mesaje în acest canal.** "
-    "Acesta este un canal-capcană (honeypot) — dacă postezi aici vei fi eliminat de pe server."
-)
-
 CUVINTE_NUME_ALEATORIU = [
     "chat", "discutii", "general", "hangout", "colt", "loc", "zona",
     "spatiu", "camera", "hub", "fara-spam", "vorba", "vibe",
@@ -57,6 +52,8 @@ class Honeypot(commands.Cog):
             "actiune": "kick",  # "kick" (softban) sau "ban"
             "activat": True,
             "sterge_canal_la_declansare": False,
+            "numar_eliminati": 0,
+            "id_mesaj_avertisment": None,
             # experimente
             "warmer_activ": False,
             "nume_aleatoriu_activ": False,
@@ -110,6 +107,56 @@ class Honeypot(commands.Cog):
         await self._gestioneaza_declansare(message)
 
     # ---------------------------------------------------------------
+    # Embed de avertisment (cu contor) din canalul honeypot
+    # ---------------------------------------------------------------
+
+    def _construieste_embed_avertisment(self, numar_eliminati: int) -> discord.Embed:
+        embed = discord.Embed(
+            title="⚠️ Canal Honeypot — Nu posta aici!",
+            description=(
+                "Acesta este un canal-capcană (honeypot) folosit pentru a detecta "
+                "conturi de spam sau compromise.\n\n"
+                "**Dacă trimiți un mesaj aici, veți fi eliminat imediat de pe server.**"
+            ),
+            color=discord.Color.gold(),
+        )
+        embed.add_field(
+            name="🍯 Utilizatori eliminați până acum",
+            value=f"**{numar_eliminati}**",
+            inline=False,
+        )
+        embed.set_footer(text="Sistem anti-spam Honeypot")
+        return embed
+
+    async def _actualizeaza_mesaj_avertisment(self, guild: discord.Guild, canal: discord.TextChannel = None):
+        """Actualizează (sau creează) mesajul embed cu contorul din canalul honeypot."""
+        conf = self.config.guild(guild)
+        data = await conf.all()
+
+        if canal is None:
+            id_canal = data.get("canal_honeypot")
+            if id_canal is None:
+                return
+            canal = guild.get_channel(id_canal)
+            if canal is None:
+                return
+
+        embed = self._construieste_embed_avertisment(data.get("numar_eliminati", 0))
+        id_mesaj = data.get("id_mesaj_avertisment")
+
+        if id_mesaj:
+            try:
+                mesaj = await canal.fetch_message(id_mesaj)
+                await mesaj.edit(embed=embed)
+                return
+            except (discord.NotFound, discord.HTTPException):
+                pass  # mesajul nu mai există, trimitem unul nou mai jos
+
+        with contextlib.suppress(discord.HTTPException):
+            mesaj_nou = await canal.send(embed=embed)
+            await conf.id_mesaj_avertisment.set(mesaj_nou.id)
+
+    # ---------------------------------------------------------------
     # Gestionarea declanșării capcanei
     # ---------------------------------------------------------------
 
@@ -153,6 +200,13 @@ class Honeypot(commands.Cog):
         except discord.HTTPException as e:
             eroare = f"Eroare HTTP la aplicarea sancțiunii: {e}"
 
+        if actiune_reusita:
+            numar_nou = await conf.numar_eliminati()
+            numar_nou += 1
+            await conf.numar_eliminati.set(numar_nou)
+            if not await conf.fara_mesaj_avertisment():
+                await self._actualizeaza_mesaj_avertisment(guild, message.channel)
+
         if id_canal_log:
             canal_log = guild.get_channel(id_canal_log)
             if canal_log:
@@ -193,11 +247,12 @@ class Honeypot(commands.Cog):
         except discord.Forbidden:
             return None
 
-        await self.config.guild(guild).canal_honeypot.set(canal.id)
+        conf = self.config.guild(guild)
+        await conf.canal_honeypot.set(canal.id)
+        await conf.id_mesaj_avertisment.set(None)
 
-        if not await self.config.guild(guild).fara_mesaj_avertisment():
-            with contextlib.suppress(discord.HTTPException):
-                await canal.send(MESAJ_AVERTISMENT_IMPLICIT)
+        if not await conf.fara_mesaj_avertisment():
+            await self._actualizeaza_mesaj_avertisment(guild, canal)
 
         return canal
 
@@ -286,6 +341,7 @@ class Honeypot(commands.Cog):
             name="Canal Log", value=canal_log.mention if canal_log else "Nesetat", inline=True
         )
         embed.add_field(name="Acțiune", value=data["actiune"], inline=True)
+        embed.add_field(name="Utilizatori eliminați", value=str(data.get("numar_eliminati", 0)), inline=True)
         experimente = []
         if data["warmer_activ"]:
             experimente.append("Warmer canal")
@@ -344,6 +400,21 @@ class Honeypot(commands.Cog):
         await conf.activat.set(activat)
         await ctx.send(f"Honeypot este acum **{'activat' if activat else 'dezactivat'}**.")
 
+    @honeypot.command(name="contor")
+    async def honeypot_contor(self, ctx: commands.Context):
+        """Afișează numărul de utilizatori eliminați de honeypot pe acest server."""
+        numar = await self.config.guild(ctx.guild).numar_eliminati()
+        await ctx.send(f"🍯 Honeypot a eliminat până acum **{numar}** utilizatori pe acest server.")
+
+    @honeypot.command(name="reseteazacontor")
+    async def honeypot_reseteaza_contor(self, ctx: commands.Context):
+        """Resetează la 0 contorul de utilizatori eliminați și actualizează embed-ul din canal."""
+        conf = self.config.guild(ctx.guild)
+        await conf.numar_eliminati.set(0)
+        if not await conf.fara_mesaj_avertisment():
+            await self._actualizeaza_mesaj_avertisment(ctx.guild)
+        await ctx.send("Contorul a fost resetat la 0.")
+
     @honeypot.group(name="experiment")
     async def honeypot_experiment(self, ctx: commands.Context):
         """Activează/dezactivează funcții experimentale honeypot."""
@@ -366,8 +437,25 @@ class Honeypot(commands.Cog):
 
     @honeypot_experiment.command(name="faraavertisment")
     async def experiment_fara_avertisment(self, ctx: commands.Context, activat: bool):
-        """Activează/dezactivează postarea mesajului de avertisment în canalul honeypot."""
-        await self.config.guild(ctx.guild).fara_mesaj_avertisment.set(activat)
+        """Activează/dezactivează postarea mesajului embed de avertisment (cu contor) în canalul honeypot."""
+        conf = self.config.guild(ctx.guild)
+        await conf.fara_mesaj_avertisment.set(activat)
+
+        if not activat:
+            # Re-activat: (re)trimite embed-ul cu contor în canal, dacă există un canal setat
+            await self._actualizeaza_mesaj_avertisment(ctx.guild)
+        else:
+            # Dezactivat: șterge mesajul embed existent, dacă există
+            id_canal = await conf.canal_honeypot()
+            id_mesaj = await conf.id_mesaj_avertisment()
+            if id_canal and id_mesaj:
+                canal = ctx.guild.get_channel(id_canal)
+                if canal:
+                    with contextlib.suppress(discord.HTTPException):
+                        mesaj = await canal.fetch_message(id_mesaj)
+                        await mesaj.delete()
+                await conf.id_mesaj_avertisment.set(None)
+
         await ctx.send(f"Fără mesaj de avertisment: **{'activat' if activat else 'dezactivat'}**.")
 
     @honeypot_experiment.command(name="faradm")
