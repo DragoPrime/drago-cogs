@@ -1,0 +1,10 @@
+{
+    "author": ["Claude (rescriere bazată pe RiskyMH/honeypot)"],
+    "min_bot_version": "3.5.0",
+    "description": "Prinde și elimină automat boți de spam prin monitorizarea unui canal dedicat honeypot (capcană).",
+    "short": "Cog anti-spam bazat pe canal honeypot.",
+    "install_msg": "Mulțumim că ai instalat Honeypot! Folosește `[p]honeypot` pentru configurare, sau `[p]honeypot setup` pentru a crea automat un canal honeypot.",
+    "requirements": [],
+    "tags": ["moderare", "antispam", "securitate"],
+    "end_user_data_statement": "Acest cog nu stochează date de utilizator în afara ID-urilor Discord folosite pentru configurarea canalului honeypot/canalului de log, și a mesajelor de jurnal trimise în canalul de log configurat."
+}
