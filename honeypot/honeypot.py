@@ -127,7 +127,7 @@ class Honeypot(commands.Cog):
             value=f"**{numar_eliminati}**",
             inline=False,
         )
-        embed.set_footer(text="Sistem anti-spam Honeypot")
+        embed.set_footer(text="Sistem anti-spam Honeypot. Plugin creat de DragoPrime pentru Aryana.")
         return embed
 
     async def _actualizeaza_mesaj_avertisment(self, guild: discord.Guild, canal: discord.TextChannel = None):
