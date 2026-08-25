@@ -54,6 +54,8 @@ class Honeypot(commands.Cog):
             "sterge_canal_la_declansare": False,
             "numar_eliminati": 0,
             "id_mesaj_avertisment": None,
+            "warmer_ultima_trimitere": 0,
+            "nume_ultima_rotatie": 0,
             # experimente
             "warmer_activ": False,
             "nume_aleatoriu_activ": False,
@@ -265,13 +267,18 @@ class Honeypot(commands.Cog):
     # Task-uri programate (experimente)
     # ---------------------------------------------------------------
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=1)
     async def task_warmer(self):
-        """Zilnic: trimite un mesaj scurt în canalele honeypot cu warmer activat,
-        ca să pară un canal activ (descurajează boții care evită canale goale)."""
+        """La fiecare oră verifică dacă au trecut 24h de la ultimul mesaj warmer,
+        pentru fiecare server cu warmer activat; dacă da, trimite unul nou.
+        Verificarea orară (în loc de buclă directă la 24h) evită trimiterea
+        imediată a unui mesaj la fiecare reîncărcare a cog-ului."""
+        acum = datetime.now(timezone.utc).timestamp()
         all_guilds = await self.config.all_guilds()
         for guild_id, data in all_guilds.items():
             if not data.get("warmer_activ") or not data.get("activat"):
+                continue
+            if acum - data.get("warmer_ultima_trimitere", 0) < 24 * 3600:
                 continue
             guild = self.bot.get_guild(guild_id)
             if guild is None:
@@ -284,18 +291,23 @@ class Honeypot(commands.Cog):
                 continue
             with contextlib.suppress(discord.HTTPException):
                 await canal.send(random.choice(MESAJE_WARMER))
+            await self.config.guild(guild).warmer_ultima_trimitere.set(acum)
 
     @task_warmer.before_loop
     async def before_task_warmer(self):
         await self.bot.wait_until_ready()
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=1)
     async def task_nume_aleatoriu(self):
-        """Zilnic: redenumește canalele honeypot cu nume_aleatoriu_activ pornit,
-        pentru a evita boții care blocklistează numele "honeypot"."""
+        """La fiecare oră verifică dacă au trecut 24h de la ultima rotație de nume,
+        pentru fiecare server cu funcția activată; dacă da, redenumește canalul.
+        Verificarea orară evită o redenumire imediată la fiecare reîncărcare."""
+        acum = datetime.now(timezone.utc).timestamp()
         all_guilds = await self.config.all_guilds()
         for guild_id, data in all_guilds.items():
             if not data.get("nume_aleatoriu_activ") or not data.get("activat"):
+                continue
+            if acum - data.get("nume_ultima_rotatie", 0) < 24 * 3600:
                 continue
             guild = self.bot.get_guild(guild_id)
             if guild is None:
@@ -309,6 +321,7 @@ class Honeypot(commands.Cog):
             nume_nou = self._genereaza_nume_canal(haos=data.get("nume_aleatoriu_haos", False))
             with contextlib.suppress(discord.HTTPException):
                 await canal.edit(name=nume_nou, reason="Honeypot: rotație zilnică a numelui canalului")
+            await self.config.guild(guild).nume_ultima_rotatie.set(acum)
 
     @task_nume_aleatoriu.before_loop
     async def before_task_nume_aleatoriu(self):
