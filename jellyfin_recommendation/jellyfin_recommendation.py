@@ -4,7 +4,7 @@ import aiohttp
 import random
 import discord
 from datetime import datetime, timedelta
-from deep_translator import GoogleTranslator
+from deep_translator import GoogleTranslator, MyMemoryTranslator
 
 class JellyfinRecommendation(commands.Cog):
     """Provide random Jellyfin recommendations every Monday"""
@@ -49,20 +49,45 @@ class JellyfinRecommendation(commands.Cog):
             self.bg_task.cancel()
 
     async def translate_to_romanian(self, text):
-        """Traduce textul în română folosind Google Translate"""
+        """Traduce textul în română folosind Google Translate, cu fallback pe MyMemory"""
         if not text or text == 'Fără descriere disponibilă.':
             return text
-        
+
+        def _looks_like_error(result):
+            if not result:
+                return True
+            markers = ("Error 500", "That's an error", "That’s an error", "Server Error")
+            return any(m in result for m in markers)
+
+        loop = asyncio.get_event_loop()
+
+        # 1. Încearcă Google Translate (prin scraping, gratuit dar nu 100% de încredere)
         try:
-            loop = asyncio.get_event_loop()
             translated = await loop.run_in_executor(
-                None, 
+                None,
                 lambda: GoogleTranslator(source='auto', target='ro').translate(text)
             )
-            return translated
+            if not _looks_like_error(translated):
+                return translated
+            print("GoogleTranslator a returnat o pagină de eroare, încerc fallback MyMemory...")
         except Exception as e:
-            print(f"Eroare la traducere: {e}")
-            return text
+            print(f"Eroare la traducere (Google): {e}")
+
+        # 2. Fallback: MyMemory (gratuit, fără cheie API, dar limitat la ~500 caractere/cerere)
+        try:
+            chunk = text if len(text) <= 490 else text[:490] + "..."
+            translated = await loop.run_in_executor(
+                None,
+                lambda: MyMemoryTranslator(source='en', target='ro').translate(chunk)
+            )
+            if not _looks_like_error(translated):
+                return translated
+            print("MyMemoryTranslator a returnat o eroare, folosesc textul original.")
+        except Exception as e:
+            print(f"Eroare la traducere (MyMemory): {e}")
+
+        # 3. Ultim fallback: textul original, netradus
+        return text
 
     async def monday_recommendation_loop(self):
         """Background loop for Monday recommendations"""
