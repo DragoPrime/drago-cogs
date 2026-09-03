@@ -1,5 +1,6 @@
 import asyncio
 import random
+import re
 import time
 from collections import defaultdict, deque
 
@@ -24,7 +25,10 @@ DEFAULT_WELCOME_INSTRUCTION = (
 DEFAULT_CHAT_INSTRUCTION = (
     "Esti intr-un chat de Discord si tocmai cineva a scris un mesaj. Raspunde "
     "natural, scurt (maxim 1-3 propozitii), in limba romana, tinand cont de "
-    "personalitatea ta si de contextul conversatiei de mai jos."
+    "personalitatea ta si de contextul conversatiei de mai jos. Daca nu cunosti "
+    "un detaliu concret (nume exacte, cifre, linkuri, denumiri de grupuri etc.), "
+    "nu il inventa si nu folosi placeholdere de tipul [Nume] sau [X] - spune "
+    "sincer ca nu ai aceasta informatie, in loc sa completezi cu ceva plauzibil."
 )
 
 
@@ -116,6 +120,35 @@ class OllamaChat(commands.Cog):
     #  Integrare Jellyfin
     # ------------------------------------------------------------------ #
 
+    def _extract_search_candidates(self, text: str) -> list:
+        """Extrage termeni probabili de cautare dintr-un mesaj (titluri/nume proprii),
+        pentru ca o intrebare intreaga (ex: 'Unde gasesc One Piece?') sa nu fie trimisa
+        ca atare catre Jellyfin, unde rareori se potriveste cu nimic.
+
+        Incearca, in ordine: propozitii intre ghilimele, secvente de cuvinte cu majuscula
+        (probabil titluri), apoi mesajul intreg curatat, ca ultima solutie.
+        """
+        cleaned = text.strip().rstrip("?!.").strip()
+        candidates = []
+
+        # Text intre ghilimele - de obicei exact titlul cautat
+        quoted = re.findall(r'["\u201c\u201e]([^"\u201d]{2,60})["\u201d]', cleaned)
+        candidates.extend(q.strip() for q in quoted if q.strip())
+
+        # Secvente de 1-4 cuvinte care incep cu majuscula (nume proprii / titluri probabile)
+        romanian_upper = "A-ZĂÂÎȘȚ"
+        romanian_lower = r"a-zăâîșț0-9'\-"
+        pattern = rf"\b[{romanian_upper}][{romanian_lower}]*(?:\s+[{romanian_upper}][{romanian_lower}]*){{0,3}}\b"
+        for match in re.findall(pattern, cleaned):
+            if match not in candidates and len(match) > 2:
+                candidates.append(match)
+
+        # Mesajul intreg, curatat - ca ultima incercare (fallback)
+        if cleaned and cleaned not in candidates:
+            candidates.append(cleaned)
+
+        return candidates[:5]  # limitam numarul de incercari, ca sa nu bombardam Jellyfin
+
     async def _jellyfin_search_one(self, server: dict, query: str, limit: int) -> list:
         """Cauta un termen pe un singur server Jellyfin si returneaza o lista de descrieri scurte."""
         url = server["url"].rstrip("/")
@@ -151,6 +184,15 @@ class OllamaChat(commands.Cog):
             results.append(piece)
         return results
 
+    async def _jellyfin_search_server(self, server: dict, message_text: str, limit: int) -> list:
+        """Incearca mai multi termeni de cautare candidati pe un singur server, in ordine,
+        si returneaza rezultatele primului candidat care gaseste ceva."""
+        for term in self._extract_search_candidates(message_text):
+            items = await self._jellyfin_search_one(server, term, limit)
+            if items:
+                return items
+        return []
+
     async def _jellyfin_context(self, guild: discord.Guild, query: str, channel: discord.abc.GuildChannel) -> str:
         """Cauta pe toate serverele Jellyfin configurate si construieste un bloc de context text.
 
@@ -171,7 +213,7 @@ class OllamaChat(commands.Cog):
         for server in servers:
             if server.get("restricted") and not is_nsfw:
                 continue
-            items = await self._jellyfin_search_one(server, query, limit)
+            items = await self._jellyfin_search_server(server, query, limit)
             if items:
                 lines = "\n".join(f"  - {item}" for item in items)
                 blocks.append(
