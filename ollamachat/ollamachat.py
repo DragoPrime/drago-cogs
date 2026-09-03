@@ -149,6 +149,69 @@ class OllamaChat(commands.Cog):
 
         return candidates[:5]  # limitam numarul de incercari, ca sa nu bombardam Jellyfin
 
+    async def _jellyfin_search_diagnostic(self, server: dict, query: str, limit: int) -> dict:
+        """La fel ca _jellyfin_search_one, dar NU ascunde erorile - folosita doar de comanda
+        de test, ca sa poata arata utilizatorului exact ce s-a intamplat (status HTTP,
+        eroare de conexiune, raspuns brut de la Jellyfin etc.)."""
+        url = server["url"].rstrip("/")
+        endpoint = f"{url}/Search/Hints"
+        params = {
+            "searchTerm": query,
+            "api_key": server["api_key"],
+            "Limit": str(limit),
+            "IncludeArtists": "false",
+            "IncludeGenres": "false",
+            "IncludeStudios": "false",
+        }
+        result = {
+            "ok": False,
+            "endpoint": endpoint,
+            "status": None,
+            "error": None,
+            "raw_snippet": None,
+            "total_record_count": None,
+            "items": [],
+        }
+        try:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with self.session.get(endpoint, params=params, timeout=timeout) as resp:
+                result["status"] = resp.status
+                text = await resp.text()
+                result["raw_snippet"] = text[:300]
+                if resp.status != 200:
+                    result["error"] = f"Serverul a raspuns cu status HTTP {resp.status}"
+                    return result
+                try:
+                    data = await resp.json(content_type=None)
+                except Exception:
+                    result["error"] = "Raspunsul nu a putut fi interpretat ca JSON valid."
+                    return result
+        except asyncio.TimeoutError:
+            result["error"] = "Timeout - serverul nu a raspuns in timp util (10s)."
+            return result
+        except aiohttp.ClientConnectorError as e:
+            result["error"] = f"Nu m-am putut conecta la server: {e}"
+            return result
+        except aiohttp.ClientError as e:
+            result["error"] = f"Eroare de retea: {e}"
+            return result
+
+        result["ok"] = True
+        result["total_record_count"] = data.get("TotalRecordCount")
+        for hint in data.get("SearchHints", []):
+            name = hint.get("Name")
+            if not name:
+                continue
+            year = hint.get("ProductionYear")
+            item_type = hint.get("Type", "")
+            piece = name
+            if year:
+                piece += f" ({year})"
+            if item_type:
+                piece += f" [{item_type}]"
+            result["items"].append(piece)
+        return result
+
     async def _jellyfin_search_one(self, server: dict, query: str, limit: int) -> list:
         """Cauta un termen pe un singur server Jellyfin si returneaza o lista de descrieri scurte."""
         url = server["url"].rstrip("/")
@@ -165,7 +228,7 @@ class OllamaChat(commands.Cog):
             async with self.session.get(f"{url}/Search/Hints", params=params, timeout=timeout) as resp:
                 if resp.status != 200:
                     return []
-                data = await resp.json()
+                data = await resp.json(content_type=None)
         except (asyncio.TimeoutError, aiohttp.ClientError):
             return []
 
@@ -578,7 +641,7 @@ class OllamaChat(commands.Cog):
 
     @ollamaset_jellyfin.command(name="test")
     async def jellyfin_test(self, ctx: commands.Context, nume: str, *, cautare: str):
-        """Testeaza o cautare directa pe un server Jellyfin, dupa nume."""
+        """Testeaza o cautare directa pe un server Jellyfin, dupa nume, cu diagnostic detaliat."""
         servers = await self.config.guild(ctx.guild).jellyfin_servers()
         server = next((s for s in servers if s["name"].lower() == nume.lower()), None)
         if server is None:
@@ -586,11 +649,54 @@ class OllamaChat(commands.Cog):
             return
         limit = await self.config.guild(ctx.guild).jellyfin_search_limit()
         async with ctx.typing():
-            results = await self._jellyfin_search_one(server, cautare, limit)
-        if not results:
-            await ctx.send("Nu am gasit niciun rezultat (sau serverul nu a raspuns).")
-            return
-        await ctx.send("Rezultate:\n" + "\n".join(f"- {r}" for r in results))
+            r = await self._jellyfin_search_diagnostic(server, cautare, limit)
+
+        embed = discord.Embed(
+            title=f"Diagnostic Jellyfin — {server['name']}",
+            color=discord.Color.green() if r["ok"] and r["items"] else discord.Color.orange(),
+        )
+        embed.add_field(name="Endpoint interogat", value=f"`{r['endpoint']}`", inline=False)
+        embed.add_field(name="Termen cautat", value=f"`{cautare}`", inline=True)
+        embed.add_field(name="Status HTTP", value=str(r["status"]) if r["status"] else "—", inline=True)
+
+        if r["error"]:
+            embed.color = discord.Color.red()
+            embed.add_field(name="Eroare", value=r["error"], inline=False)
+            if r["raw_snippet"]:
+                embed.add_field(name="Raspuns brut (primele caractere)", value=f"```{r['raw_snippet']}```", inline=False)
+            embed.add_field(
+                name="Verifica",
+                value=(
+                    "- URL-ul e corect si accesibil de pe masina unde ruleaza botul "
+                    "(nu doar din reteaua ta locala)?\n"
+                    "- Cheia API e valida (Dashboard → API Keys in Jellyfin)?\n"
+                    "- Serverul Jellyfin chiar ruleaza si e pornit?"
+                ),
+                inline=False,
+            )
+        elif not r["items"]:
+            embed.add_field(
+                name="Rezultat",
+                value=(
+                    f"Conexiunea a functionat (status 200), dar cautarea nu a gasit nimic pentru "
+                    f"`{cautare}` (TotalRecordCount: {r['total_record_count']}).\n\n"
+                    "Verifica:\n"
+                    "- Titlul e scris corect si exista efectiv in aceasta biblioteca Jellyfin?\n"
+                    "- Biblioteca a fost scanata complet in Jellyfin (Dashboard → Libraries → Scan)?\n"
+                    "- Cheia API are acces la biblioteca respectiva (nu doar la cont, ci si la "
+                    "permisiunile de biblioteca setate pentru acel user/cheie)?\n"
+                    "- Incearca un termen si mai simplu, de-o singura silaba/cuvant comun din titlu."
+                ),
+                inline=False,
+            )
+        else:
+            embed.add_field(
+                name=f"Rezultate ({len(r['items'])})",
+                value="\n".join(f"- {item}" for item in r["items"]),
+                inline=False,
+            )
+
+        await ctx.send(embed=embed)
 
     @ollamaset_jellyfin.command(name="limita", aliases=["limit"])
     async def jellyfin_limit(self, ctx: commands.Context, numar: int):
