@@ -72,6 +72,12 @@ context pentru AI, ca să răspundă corect despre ce titluri există — fără
 Când găsește un titlu, AI-ul poate include și adresa serverului Jellyfin respectiv în răspuns,
 ca utilizatorul să știe direct unde să-l acceseze.
 
+**Extragere inteligentă a termenului de căutare:** botul nu trimite întreaga propoziție a
+utilizatorului către Jellyfin (rareori s-ar potrivi cu ceva). În schimb, încearcă, în ordine:
+text între ghilimele, apoi secvențe de cuvinte cu majusculă (titluri/nume probabile, ex. "Solo
+Leveling" dintr-o întrebare mai lungă), și abia la final propoziția întreagă, ca ultimă
+variantă. Se oprește la primul termen care găsește rezultate.
+
 ### Cum obții o cheie API Jellyfin
 
 În interfața web Jellyfin: **Dashboard → API Keys → +** (creează o cheie nouă, dă-i un nume).
