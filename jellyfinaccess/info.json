@@ -1,0 +1,10 @@
+{
+    "author": ["Drago Prime"],
+    "min_bot_version": "3.5.0",
+    "description": "Panel cu Select + Modal pentru cereri de acces Jellyfin, fara comanda text. Cog separat de test, nu interfereaza cu jellyfinmanager.",
+    "hidden": false,
+    "install_msg": "Multumesc ca ai instalat JellyfinAccess! Configureaza cu `[p]jfaccess addserver <nume> <url> <api_key>`, apoi posteaza panelul cu `[p]jfaccess panel`.",
+    "short": "Panel Select+Modal pentru cereri de acces Jellyfin",
+    "tags": ["jellyfin", "tickets", "access", "modal"],
+    "end_user_data_statement": "Acest cog stocheaza, per server Discord: numele si URL-urile serverelor Jellyfin configurate, cheile API asociate, canalul de log, si (in log) username-urile Jellyfin cerute de utilizatori impreuna cu ID-ul lor de Discord. Parolele introduse de utilizatori NU sunt stocate, sunt folosite o singura data pentru apelul catre API-ul Jellyfin si apoi aruncate."
+}
