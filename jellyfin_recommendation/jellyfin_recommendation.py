@@ -1,5 +1,6 @@
 from redbot.core import commands, Config
 import asyncio
+import io
 import aiohttp
 import random
 import discord
@@ -47,6 +48,52 @@ class JellyfinRecommendation(commands.Cog):
     def cog_unload(self):
         if self.bg_task:
             self.bg_task.cancel()
+
+    @staticmethod
+    def _jellyfin_headers(api_key):
+        """Header de autorizare pentru Jellyfin.
+
+        Jellyfin 12.0 a dezactivat metodele vechi (?api_key= în URL, X-Emby-Token,
+        X-MediaBrowser-Token). Header-ul Authorization: MediaBrowser este acceptat
+        atât de Jellyfin 12.x, cât și de versiunile mai vechi (10.10.x / 10.11.x).
+        """
+        return {"Authorization": f'MediaBrowser Token="{api_key}"'}
+
+    async def fetch_jellyfin_poster(self, base_url, api_key, item_id):
+        """Descarcă posterul din Jellyfin și îl returnează ca discord.File (sau None).
+
+        Imaginea e descărcată de bot, cu header-ul Authorization, iar Discord o primește
+        ca fișier atașat. Astfel cheia API nu mai apare niciodată în URL-ul din embed
+        (unde ar fi vizibilă oricui poate vedea mesajul).
+        """
+        url = f"{base_url}/Items/{item_id}/Images/Primary"
+        params = {"maxWidth": 500, "quality": 90}
+        max_bytes = 8 * 1024 * 1024  # limita sigură pentru atașamente Discord
+        timeout = aiohttp.ClientTimeout(total=30)
+
+        try:
+            async with aiohttp.ClientSession(
+                headers=self._jellyfin_headers(api_key), timeout=timeout
+            ) as session:
+                async with session.get(url, params=params) as response:
+                    if response.status != 200:
+                        print(f"Jellyfin poster error: Status {response.status}")
+                        return None
+                    content_type = response.headers.get("Content-Type", "")
+                    data = await response.read()
+        except Exception as e:
+            print(f"Error fetching Jellyfin poster: {e}")
+            return None
+
+        if not data or len(data) > max_bytes:
+            return None
+
+        ext = {
+            "image/png": "png",
+            "image/webp": "webp",
+            "image/gif": "gif",
+        }.get(content_type.split(";")[0].strip().lower(), "jpg")
+        return discord.File(io.BytesIO(data), filename=f"poster.{ext}")
 
     async def translate_to_romanian(self, text):
         """Traduce textul în română folosind Google Translate, cu fallback pe MyMemory"""
@@ -165,25 +212,25 @@ class JellyfinRecommendation(commands.Cog):
 
     async def get_item_details(self, base_url, api_key, item_id):
         """Obține detalii complete despre un item din Jellyfin"""
-        details_url = f"{base_url}/Users/{{UserId}}/Items/{item_id}?api_key={api_key}"
+        details_url = f"{base_url}/Users/{{UserId}}/Items/{item_id}"
         
         # Încearcă să obțină UserId
-        users_url = f"{base_url}/Users?api_key={api_key}"
+        users_url = f"{base_url}/Users"
         
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(headers=self._jellyfin_headers(api_key)) as session:
                 # Obține primul user
                 async with session.get(users_url) as response:
                     if response.status == 200:
                         users = await response.json()
                         if users:
                             user_id = users[0]['Id']
-                            details_url = f"{base_url}/Users/{user_id}/Items/{item_id}?api_key={api_key}"
+                            details_url = f"{base_url}/Users/{user_id}/Items/{item_id}"
                         else:
                             # Fallback la Items endpoint fără UserId
-                            details_url = f"{base_url}/Items/{item_id}?api_key={api_key}"
+                            details_url = f"{base_url}/Items/{item_id}"
                     else:
-                        details_url = f"{base_url}/Items/{item_id}?api_key={api_key}"
+                        details_url = f"{base_url}/Items/{item_id}"
                 
                 # Obține detaliile item-ului
                 async with session.get(details_url) as response:
@@ -214,6 +261,7 @@ class JellyfinRecommendation(commands.Cog):
         media_display = "Film" if is_movie else "Serial"
         overview = None
         poster_url = None
+        poster_file = None
         
         # Pentru anime, folosește TMDb
         if media_type == 'anime':
@@ -253,9 +301,11 @@ class JellyfinRecommendation(commands.Cog):
             else:
                 overview = 'Fără descriere disponibilă.'
             
-            # Folosește posterul din Jellyfin
+            # Folosește posterul din Jellyfin (descărcat de bot și atașat ca fișier)
             if item_id and item.get('ImageTags', {}).get('Primary'):
-                poster_url = f"{settings['base_url']}/Items/{item_id}/Images/Primary?api_key={settings['api_key']}"
+                poster_file = await self.fetch_jellyfin_poster(
+                    settings['base_url'], settings['api_key'], item_id
+                )
         
         if not overview or overview.strip() == '':
             overview = 'Fără descriere disponibilă.'
@@ -272,6 +322,8 @@ class JellyfinRecommendation(commands.Cog):
         
         if poster_url:
             embed.set_thumbnail(url=poster_url)
+        elif poster_file:
+            embed.set_thumbnail(url=f"attachment://{poster_file.filename}")
         
         embed.add_field(name="Tip", value=media_display, inline=True)
         
@@ -293,7 +345,8 @@ class JellyfinRecommendation(commands.Cog):
 
         channel = guild.get_channel(settings['channel_id'])
         if channel:
-            await channel.send("**Recomandarea de săptămâna aceasta:**", embed=embed)
+            send_kwargs = {"file": poster_file} if poster_file else {}
+            await channel.send("**Recomandarea de săptămâna aceasta:**", embed=embed, **send_kwargs)
 
     # ===== COMENZI ANIME =====
     @commands.command()
@@ -413,19 +466,25 @@ class JellyfinRecommendation(commands.Cog):
 
     async def get_random_recommendation(self, base_url, api_key):
         """Fetch a random recommendation"""
-        search_url = f"{base_url}/Items?IncludeItemTypes=Movie,Series&Recursive=true&SortBy=Random&Limit=1&api_key={api_key}"
+        search_url = f"{base_url}/Items?IncludeItemTypes=Movie,Series&Recursive=true&SortBy=Random&Limit=1"
 
         max_retries = 3
         retry_delay = 2
         
         for attempt in range(max_retries):
             try:
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(headers=self._jellyfin_headers(api_key)) as session:
                     async with session.get(search_url) as response:
                         if response.status == 200:
                             data = await response.json()
                             items = data.get('Items', [])
                             return items[0] if items else None
+                        elif response.status == 401:
+                            print(
+                                "Jellyfin API error: Status 401 - verifică cheia API "
+                                "(Dashboard > API Keys) și URL-ul serverului."
+                            )
+                            return None  # o cheie greșită nu se rezolvă prin retry
                         else:
                             print(f"Jellyfin API error: Status {response.status}")
             except Exception as e:
@@ -492,6 +551,7 @@ class JellyfinRecommendation(commands.Cog):
             media_display = "Film" if is_movie else "Serial"
             overview = None
             poster_url = None
+            poster_file = None
             
             # Pentru anime, folosește TMDb
             if media_type == 'anime':
@@ -531,9 +591,11 @@ class JellyfinRecommendation(commands.Cog):
                 else:
                     overview = 'Fără descriere disponibilă.'
                 
-                # Folosește posterul din Jellyfin
+                # Folosește posterul din Jellyfin (descărcat de bot și atașat ca fișier)
                 if item_id and item.get('ImageTags', {}).get('Primary'):
-                    poster_url = f"{settings['base_url']}/Items/{item_id}/Images/Primary?api_key={settings['api_key']}"
+                    poster_file = await self.fetch_jellyfin_poster(
+                        settings['base_url'], settings['api_key'], item_id
+                    )
             
             if not overview or overview.strip() == '':
                 overview = 'Fără descriere disponibilă.'
@@ -550,6 +612,8 @@ class JellyfinRecommendation(commands.Cog):
             
             if poster_url:
                 embed.set_thumbnail(url=poster_url)
+            elif poster_file:
+                embed.set_thumbnail(url=f"attachment://{poster_file.filename}")
             
             embed.add_field(name="Tip", value=media_display, inline=True)
             
@@ -570,7 +634,8 @@ class JellyfinRecommendation(commands.Cog):
             embed.add_field(name="Caută mai multe recomandări:", value=f"Folosește comanda {cmd_text} pentru a primi o recomandare personalizată oricând dorești!", inline=False)
 
             await waiting_msg.delete()
-            await ctx.send(embed=embed)
+            send_kwargs = {"file": poster_file} if poster_file else {}
+            await ctx.send(embed=embed, **send_kwargs)
         except Exception as e:
             await waiting_msg.delete()
             await ctx.send(f"A apărut o eroare în generarea recomandării: {e}")
