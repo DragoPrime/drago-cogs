@@ -13,6 +13,22 @@ from redbot.core.utils.predicates import MessagePredicate
 
 log = logging.getLogger("red.jellyfincog")
 
+# Jellyfin 12.0 (fost 10.12) dezactivează implicit EnableLegacyAuthorization, ceea ce
+# elimină suportul pentru header-ele vechi X-Emby-Authorization / X-Emby-Token /
+# X-MediaBrowser-Token. Noul standard este header-ul "Authorization" cu schema
+# "MediaBrowser", acceptat atât de serverele vechi (10.x) cât și de cele noi (12.x).
+def _build_mediabrowser_auth_header(token: Optional[str] = None) -> str:
+    """Construiește valoarea header-ului Authorization în formatul MediaBrowser"""
+    parts = [
+        'Client="RedBot"',
+        'Device="RedBot"',
+        'DeviceId="redbot-jellyfin"',
+        'Version="1.0.0"'
+    ]
+    if token:
+        parts.append(f'Token="{token}"')
+    return "MediaBrowser " + ", ".join(parts)
+
 class JellyfinCog(commands.Cog):
     """Cog pentru gestionarea utilizatorilor pe servere Jellyfin multiple"""
     
@@ -147,7 +163,7 @@ class JellyfinCog(commands.Cog):
         
         headers = {
             "Content-Type": "application/json",
-            "X-Emby-Authorization": 'MediaBrowser Client="RedBot", Device="RedBot", DeviceId="redbot-jellyfin", Version="1.0.0"'
+            "Authorization": _build_mediabrowser_auth_header()
         }
         
         try:
@@ -178,7 +194,7 @@ class JellyfinCog(commands.Cog):
         }
         
         headers = {
-            "X-MediaBrowser-Token": token
+            "Authorization": _build_mediabrowser_auth_header(token)
         }
         
         try:
@@ -218,7 +234,7 @@ class JellyfinCog(commands.Cog):
         """Șterge un utilizator Jellyfin"""
         delete_url = f"{server_url}/Users/{user_id}"
     
-        headers = {"X-MediaBrowser-Token": token}
+        headers = {"Authorization": _build_mediabrowser_auth_header(token)}
     
         try:
             async with aiohttp.ClientSession() as session:
@@ -649,7 +665,7 @@ class JellyfinCog(commands.Cog):
         
         headers = {
             "Content-Type": "application/json",
-            "X-MediaBrowser-Token": token
+            "Authorization": _build_mediabrowser_auth_header(token)
         }
         
         try:
