@@ -346,10 +346,10 @@ class JellyfinCog(commands.Cog):
         total_checked = 0
         total_deleted = 0
         
-        for discord_user_id, user_servers in users.items():
+        for discord_user_id, user_servers in list(users.items()):
             log.info(f"\n--- Verificare utilizator Discord ID: {discord_user_id} ---")
             
-            for server_name, server_users in user_servers.items():
+            for server_name, server_users in list(user_servers.items()):
                 log.info(f"  Server: {server_name}")
                 
                 if server_name not in servers:
@@ -371,7 +371,7 @@ class JellyfinCog(commands.Cog):
                 
                 log.info(f"  ✅ Token obținut cu succes")
                 
-                for jellyfin_username, user_data in server_users.items():
+                for jellyfin_username, user_data in list(server_users.items()):
                     total_checked += 1
                     jellyfin_id = user_data.get("jellyfin_id")
                     
