@@ -266,21 +266,22 @@ class JellyfinCog(commands.Cog):
             users_data = await self.config.users()
             user_id_str = str(discord_user_id)
             
-            # Verifică dacă utilizatorul există în tracking
-            if user_id_str not in users_data:
-                return
-            
-            # Verifică dacă utilizatorul are conturi pe acest server
-            if server_name not in users_data[user_id_str]:
-                return
-            
-            # Verifică dacă mai are conturi ACTIVE (nu șterse) pe acest server
-            server_users = users_data[user_id_str][server_name]
-            active_users = [username for username, data in server_users.items() 
-                          if data.get("status", "active") != "deleted"]
+            # Determină câte conturi ACTIVE mai are pe acest server.
+            # IMPORTANT: dacă intrarea nu mai există deloc în tracking (a fost ștearsă
+            # complet, ceea ce e cazul normal când era singurul cont de pe acel server),
+            # asta înseamnă tot "zero conturi active" - deci rolul tot trebuie eliminat.
+            # Nu ieșim din funcție doar pentru că tracking-ul a fost deja curățat.
+            active_users = []
+            if user_id_str in users_data and server_name in users_data[user_id_str]:
+                server_users = users_data[user_id_str][server_name]
+                active_users = [username for username, data in server_users.items() 
+                              if data.get("status", "active") != "deleted"]
+                total_accounts = len(server_users)
+            else:
+                total_accounts = 0
             
             log.info(f"Verificare roluri pentru user {discord_user_id} pe {server_name}")
-            log.info(f"  Conturi active: {len(active_users)} din {len(server_users)}")
+            log.info(f"  Conturi active: {len(active_users)} din {total_accounts}")
             
             # Dacă nu mai are niciun cont activ, elimină rolul din toate guild-urile
             if len(active_users) == 0:
