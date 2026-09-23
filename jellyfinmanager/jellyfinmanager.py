@@ -244,6 +244,13 @@ class JellyfinCog(commands.Cog):
                     if resp.status == 204 or resp.status == 200:
                         log.info("✅ Utilizator șters cu succes")
                         return True
+                    elif resp.status == 404:
+                        # Utilizatorul nu mai există deja pe server (ex: șters manual,
+                        # sau intrare orfană rămasă din tracking). Scopul e deja atins,
+                        # deci tratăm ca succes ca să se poată curăța și tracking-ul local.
+                        log.warning(f"⚠️ Utilizatorul {user_id} nu mai există pe server (404) - "
+                                    f"îl consider deja șters și curăț tracking-ul local")
+                        return True
                     else:
                         error_text = await resp.text()
                         log.error(f"DELETE a returnat {resp.status}: {error_text}")
