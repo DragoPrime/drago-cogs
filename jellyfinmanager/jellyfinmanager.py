@@ -680,6 +680,36 @@ class JellyfinCog(commands.Cog):
         except Exception as e:
             return {"success": False, "error": str(e)}
     
+    async def _get_jellyfin_users(self, server_url: str, token: str) -> Optional[List[Dict[str, Any]]]:
+        """Obține lista tuturor utilizatorilor reali de pe un server Jellyfin"""
+        users_url = f"{server_url}/Users"
+        headers = {"Authorization": _build_mediabrowser_auth_header(token)}
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(users_url, headers=headers, timeout=10) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    else:
+                        error_text = await resp.text()
+                        log.error(f"Eroare la listarea utilizatorilor Jellyfin: {resp.status} - {error_text}")
+                        return None
+        except Exception as e:
+            log.error(f"Eroare la conectarea pentru listarea utilizatorilor: {e}", exc_info=True)
+            return None
+
+    async def _find_jellyfin_user_by_name(self, server_url: str, token: str, username: str) -> Optional[Dict[str, Any]]:
+        """Caută un utilizator Jellyfin după nume (case-insensitive) direct pe server"""
+        all_users = await self._get_jellyfin_users(server_url, token)
+        if all_users is None:
+            return None
+
+        username_lower = username.lower()
+        for user in all_users:
+            if user.get("Name", "").lower() == username_lower:
+                return user
+        return None
+
     async def _add_user_to_tracking(self, discord_user_id: int, server_name: str, jellyfin_username: str, jellyfin_id: str):
         """Adaugă utilizatorul la sistemul de tracking"""
         users = await self.config.users()
@@ -1014,6 +1044,133 @@ class JellyfinCog(commands.Cog):
         
         log.info(f"Reset complet utilizatori efectuat de {ctx.author} - {total_users} conturi șterse")
     
+    @server.command(name="curataorfani", aliases=["cleanuporphans"])
+    @checks.is_owner()
+    async def cleanup_orphaned_users(self, ctx, nume_server: str = None):
+        """
+        Șterge din baza de date a botului utilizatorii care nu mai există pe serverul Jellyfin
+        (de exemplu userii șterși manual direct din Jellyfin, nu prin bot)
+
+        Usage: .server curataorfani [nume_server]
+        Dacă nu specifici un server, sunt verificate TOATE serverele configurate.
+        """
+        servers_config = await self.config.servers()
+
+        if not servers_config:
+            await ctx.send("❌ Nu există servere Jellyfin configurate.")
+            return
+
+        if nume_server:
+            if nume_server not in servers_config:
+                await ctx.send(f"❌ Serverul **{nume_server}** nu există.")
+                return
+            servers_to_check = {nume_server: servers_config[nume_server]}
+        else:
+            servers_to_check = servers_config
+
+        await ctx.send(f"🔄 Verific utilizatorii de pe {len(servers_to_check)} server(e)...")
+
+        users_data = await self.config.users()
+
+        # orphans: list of (discord_user_id, server_name, jellyfin_username)
+        orphans = []
+
+        for server_name, server_config in servers_to_check.items():
+            token = await self._get_jellyfin_auth_token(
+                server_config["url"],
+                server_config["admin_user"],
+                server_config["admin_password"]
+            )
+
+            if not token:
+                await ctx.send(f"⚠️ Nu m-am putut conecta la **{server_name}**, skip.")
+                continue
+
+            real_users = await self._get_jellyfin_users(server_config["url"], token)
+
+            if real_users is None:
+                await ctx.send(f"⚠️ Nu am putut obține lista de utilizatori de pe **{server_name}**, skip.")
+                continue
+
+            real_ids = {u.get("Id") for u in real_users}
+
+            for discord_user_id, user_servers in users_data.items():
+                if server_name not in user_servers:
+                    continue
+
+                for jellyfin_username, info in user_servers[server_name].items():
+                    jellyfin_id = info.get("jellyfin_id")
+                    # Considerăm orfan dacă nu are id, sau id-ul nu mai există pe server
+                    if not jellyfin_id or jellyfin_id not in real_ids:
+                        orphans.append((discord_user_id, server_name, jellyfin_username))
+
+        if not orphans:
+            await ctx.send("✅ Nu am găsit utilizatori orfani - baza de date este sincronizată cu serverele Jellyfin.")
+            return
+
+        # Construiește preview-ul
+        preview_lines = []
+        for discord_user_id, server_name, jellyfin_username in orphans:
+            discord_user = self.bot.get_user(int(discord_user_id))
+            discord_tag = str(discord_user) if discord_user else f"ID:{discord_user_id}"
+            preview_lines.append(f"• **{jellyfin_username}** ({server_name}) — {discord_tag}")
+
+        embed = discord.Embed(
+            title="⚠️ Utilizatori orfani găsiți",
+            color=0xffa500,
+            description=f"Am găsit **{len(orphans)}** înregistrări în baza de date a botului care nu mai există pe serverele Jellyfin."
+        )
+
+        for chunk in pagify("\n".join(preview_lines), page_length=1000):
+            embed.add_field(name="\u200b", value=chunk, inline=False)
+
+        embed.add_field(
+            name="✅ Pentru a confirma ștergerea din tracking:",
+            value="Scrie `CONFIRM CLEANUP` în următoarele 30 de secunde",
+            inline=False
+        )
+        embed.add_field(
+            name="ℹ️ Notă",
+            value="Această acțiune șterge doar din baza de date a botului. Nu se face nicio modificare pe serverele Jellyfin.",
+            inline=False
+        )
+
+        await ctx.send(embed=embed)
+
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel and m.content == "CONFIRM CLEANUP"
+
+        try:
+            await self.bot.wait_for('message', timeout=30.0, check=check)
+        except asyncio.TimeoutError:
+            await ctx.send("❌ Operațiune anulată - timeout.")
+            return
+
+        # Șterge orfanii din tracking
+        users_data = await self.config.users()
+        affected = set()  # (discord_user_id, server_name) pentru verificare rol
+
+        for discord_user_id, server_name, jellyfin_username in orphans:
+            if discord_user_id in users_data and server_name in users_data[discord_user_id]:
+                if jellyfin_username in users_data[discord_user_id][server_name]:
+                    del users_data[discord_user_id][server_name][jellyfin_username]
+                    affected.add((discord_user_id, server_name))
+
+                if not users_data[discord_user_id][server_name]:
+                    del users_data[discord_user_id][server_name]
+
+                if not users_data[discord_user_id]:
+                    del users_data[discord_user_id]
+
+        await self.config.users.set(users_data)
+
+        # Verifică și elimină rolurile pentru cei care nu mai au conturi active
+        for discord_user_id, server_name in affected:
+            await self._check_and_remove_role(int(discord_user_id), server_name)
+
+        await ctx.send(f"✅ Am șters **{len(orphans)}** înregistrări orfane din baza de date.")
+        log.info(f"Curățare orfani efectuată de {ctx.author} - {len(orphans)} înregistrări șterse")
+
     @commands.command(name="creeaza")
     async def create_user(self, ctx, nume_server: str, nume_utilizator: str, parola: str):
         """
@@ -1092,7 +1249,89 @@ class JellyfinCog(commands.Cog):
                 await ctx.send(embed=embed)
         else:
             await ctx.send(f"❌ Eroare la crearea utilizatorului: {result['error']}")
-    
+
+    @commands.command(name="atribuie", aliases=["assign", "linkuser"])
+    @checks.admin_or_permissions(manage_guild=True)
+    async def assign_user(self, ctx, utilizator_discord: discord.Member, nume_server: str, nume_utilizator_jellyfin: str):
+        """
+        Atribuie unui utilizator Discord un cont Jellyfin deja existent pe server
+        (util când contul a fost creat manual, direct pe Jellyfin, nu prin bot)
+
+        Usage: .atribuie <@utilizator_discord> <nume_server> <nume_utilizator_jellyfin>
+        Exemplu: .atribuie @John server1 john123
+        """
+        if not await self.config.guild(ctx.guild).enabled():
+            await ctx.send("❌ Comenzile Jellyfin nu sunt activate pe acest server Discord.")
+            return
+
+        servers_config = await self.config.servers()
+
+        if nume_server not in servers_config:
+            await ctx.send(f"❌ Serverul **{nume_server}** nu există.")
+            return
+
+        server_config = servers_config[nume_server]
+
+        token = await self._get_jellyfin_auth_token(
+            server_config["url"],
+            server_config["admin_user"],
+            server_config["admin_password"]
+        )
+
+        if not token:
+            await ctx.send("❌ Nu s-a putut autentifica pe serverul Jellyfin.")
+            return
+
+        # Caută utilizatorul direct pe serverul Jellyfin
+        jellyfin_user = await self._find_jellyfin_user_by_name(
+            server_config["url"], token, nume_utilizator_jellyfin
+        )
+
+        if not jellyfin_user:
+            await ctx.send(
+                f"❌ Nu am găsit niciun utilizator **{nume_utilizator_jellyfin}** pe serverul **{nume_server}**.\n"
+                f"Verifică dacă numele este scris corect (trebuie să existe deja pe Jellyfin)."
+            )
+            return
+
+        jellyfin_id = jellyfin_user.get("Id")
+        jellyfin_real_name = jellyfin_user.get("Name")
+
+        # Verifică dacă acest cont Jellyfin este deja atribuit altcuiva
+        existing_link = await self._get_user_by_jellyfin_username(jellyfin_real_name)
+        if existing_link:
+            if existing_link["discord_user_id"] == utilizator_discord.id and existing_link["server_name"] == nume_server:
+                await ctx.send(f"ℹ️ Contul **{jellyfin_real_name}** este deja atribuit lui {utilizator_discord.mention}.")
+                return
+            else:
+                existing_discord_user = self.bot.get_user(existing_link["discord_user_id"])
+                existing_tag = str(existing_discord_user) if existing_discord_user else f"ID:{existing_link['discord_user_id']}"
+                await ctx.send(
+                    f"❌ Contul **{jellyfin_real_name}** de pe **{nume_server}** este deja atribuit altui utilizator ({existing_tag}).\n"
+                    f"Șterge mai întâi atribuirea existentă dacă vrei să îl reasignezi."
+                )
+                return
+
+        # Adaugă la tracking
+        await self._add_user_to_tracking(utilizator_discord.id, nume_server, jellyfin_real_name, jellyfin_id)
+
+        # Încearcă să atribuie rolul
+        role_assigned = await self._assign_role(ctx.guild, utilizator_discord, nume_server)
+
+        embed = discord.Embed(
+            title="✅ Utilizator atribuit cu succes",
+            color=0x00ff00,
+            description=f"Contul Jellyfin **{jellyfin_real_name}** de pe **{nume_server}** a fost legat de {utilizator_discord.mention}"
+        )
+        embed.add_field(name="Server", value=nume_server, inline=True)
+        embed.add_field(name="Utilizator Jellyfin", value=jellyfin_real_name, inline=True)
+        embed.add_field(name="Utilizator Discord", value=utilizator_discord.mention, inline=True)
+        embed.add_field(name="Rol atribuit", value="✅ Da" if role_assigned else "❌ Nu (verifică configurația)", inline=True)
+        embed.set_footer(text=f"Atribuit de {ctx.author}")
+
+        await ctx.send(embed=embed)
+        log.info(f"{ctx.author} a atribuit contul Jellyfin {jellyfin_real_name} ({nume_server}) utilizatorului {utilizator_discord}")
+
     @commands.command(name="utilizator", aliases=["user"])
     async def user_info(self, ctx, utilizator: Union[discord.Member, str]):
         """
