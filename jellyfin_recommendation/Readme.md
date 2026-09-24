@@ -7,7 +7,7 @@ Un cog pentru Red-DiscordBot care oferă recomandări săptămânale automate de
 - 🎬 Recomandări automate în fiecare luni la ora 18:00
 - 🎌 Suport pentru anime cu integrare TMDb pentru postere și descrieri de calitate
 - 🔞 Suport pentru conținut adult folosind metadata Jellyfin
-- 🌐 Traducere automată a descrierilor în limba română
+- 🌐 Traducere automată a descrierilor în limba română, folosind un model AI local (Ollama)
 - ⚙️ Configurare separată pentru fiecare tip de conținut
 - 🎲 Comenzi manuale pentru recomandări on-demand
 - 📊 Afișare informații: gen, rating, link către server
@@ -16,9 +16,9 @@ Un cog pentru Red-DiscordBot care oferă recomandări săptămânale automate de
 
 - Red-DiscordBot 3.5.0 sau mai nou
 - Python 3.8+
+- Un server [Ollama](https://ollama.com/) accesibil de pe mașina botului, cu cel puțin un model instalat (pentru traduceri)
 - Dependențe Python:
   - `aiohttp`
-  - `deep-translator`
 
 ## Instalare
 
@@ -39,7 +39,7 @@ Un cog pentru Red-DiscordBot care oferă recomandări săptămânale automate de
 
 ### 4. Instalează dependențele
 ```
-[p]pipinstall aiohttp deep-translator
+[p]pipinstall aiohttp
 ```
 
 ## Configurare
@@ -95,6 +95,36 @@ Setează numele serverului care va apărea în linkul de vizionare
 [p]showpornrecsettings
 ```
 Afișează setările curente pentru conținut adult
+
+### Configurare Traducere (Ollama)
+
+Comenzile de mai jos pot fi folosite doar de owner-ul botului și se aplică pe tot botul (nu per server Discord).
+Valorile implicite sunt `http://localhost:11434` și modelul `gemma3`.
+
+```
+[p]ollamatranslate models
+```
+Afișează modelele instalate în Ollama
+```
+[p]ollamatranslate model <nume_model>
+```
+Setează modelul folosit la traduceri (ex: `gemma3`, `llama3.1:8b`, `qwen2.5:7b`)
+```
+[p]ollamatranslate url <URL>
+```
+Setează adresa serverului Ollama (necesar doar dacă nu rulează pe `http://localhost:11434`)
+```
+[p]ollamatranslate timeout <secunde>
+```
+Setează timeout-ul cererilor (implicit 120s; prima cerere poate dura mai mult, cât se încarcă modelul în memorie)
+```
+[p]ollamatranslate test [text]
+```
+Testează traducerea și afișează timpul, sau eroarea exactă dacă ceva nu merge
+```
+[p]ollamatranslate show
+```
+Afișează setările curente
 
 ## Comenzi Utilizatori
 
@@ -192,9 +222,12 @@ Botul necesită următoarele permisiuni în canalele configurate:
 - Verifică dacă Jellyfin API key-ul are permisiunile necesare
 
 ### Traducerea nu funcționează
-- Verifică conexiunea la internet a botului
-- Asigură-te că `deep-translator` este instalat corect
-- Verifică consolele pentru erori de la Google Translate
+- Rulează `[p]ollamatranslate test` - afișează eroarea exactă
+- Verifică dacă serviciul Ollama rulează (`ollama list` în terminal)
+- Verifică dacă modelul setat este instalat: `[p]ollamatranslate models`, apoi `[p]ollamatranslate model <nume>`
+- Dacă apare timeout, mărește valoarea cu `[p]ollamatranslate timeout 300`
+- Dacă traducerea eșuează, recomandarea se trimite oricum, cu descrierea în limba originală
+- Detalii apar și în log-urile botului (`red.drago-cogs.jellyfin_recommendation`)
 
 ## Credite
 
@@ -202,4 +235,4 @@ Botul necesită următoarele permisiuni în canalele configurate:
 - **Creator**: [ClaudeAI](https://claude.ai)
 - **Framework**: [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot)
 - **APIs**: [Jellyfin](https://jellyfin.org/), [TMDb](https://www.themoviedb.org/)
-- **Traducere**: [deep-translator](https://github.com/nidhaloff/deep-translator)
+- **Traducere**: [Ollama](https://ollama.com/)
