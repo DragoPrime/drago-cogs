@@ -5,7 +5,7 @@
     "end_user_data_statement": "Acest modul nu stochează date personale ale utilizatorilor.",
     "author": ["Drago Prime"],
     "required_cogs": {},
-    "requirements": ["aiohttp", "deep-translator"],
+    "requirements": ["aiohttp"],
     "tags": ["jellyfin", "recommendation", "media", "weekly", "anime", "adult"],
     "min_bot_version": "3.5.0",
     "hidden": false,
