@@ -1,0 +1,12 @@
+{
+    "author": ["Claude (Anthropic)"],
+    "min_bot_version": "3.5.0",
+    "max_bot_version": "0.0.0",
+    "min_python_version": [3, 8, 1],
+    "description": "Jarvix: scrii in limba naturala (ex: @Bot schimba numele canalului #canal1 in canal2) si un AI local (Ollama) alege singur, din comenzile deja incarcate in Red, comanda potrivita. Comanda se ruleaza in numele tau, cu permisiunile tale, de obicei dupa confirmare cu butoane.",
+    "hidden": false,
+    "install_msg": "Multumesc ca ai instalat Jarvix! Configureaza-l cu `[p]jarvix` (url Ollama, model, confirmare, canale permise, comenzi blocate). Testeaza fara sa execute nimic cu `[p]jarvix test <cerere>`.",
+    "short": "Controleaza botul in limba naturala: AI-ul local alege comanda Red potrivita.",
+    "end_user_data_statement": "Jarvix nu salveaza mesajele utilizatorilor. Textul unei cereri (mesajul care incepe cu mentiunea botului) este trimis catre serverul Ollama configurat de proprietarul botului, pentru a alege comanda potrivita. Se stocheaza doar setarile cog-ului (canale, comenzi blocate etc.).",
+    "tags": ["ai", "ollama", "natural language", "commands", "assistant"]
+}
